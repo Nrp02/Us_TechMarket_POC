@@ -494,9 +494,30 @@ export type UpcomingEvent = {
   note: string | null;
 };
 
-export type DailySummary = {
-  narrative: string;
-  bullets: string[];
+/**
+ * The 8-section Today's Story narrative, read back from the `stories` table.
+ * Mirrors the shape `story-generation.ts` writes (its `StorySections`), but is
+ * declared independently rather than imported from there — that file is an
+ * upstream/AI job (blocked from page/component imports by `no-restricted-imports`
+ * in eslint.config.mjs), and this read-side type is this file's own, same as
+ * the retired `DailySummary` type was never imported from `daily-summary.ts`.
+ */
+export type StorySections = {
+  headline: {
+    text: string;
+    news: { headline: string; sourceUrl: string; publishedAt: string } | null;
+  };
+  comparison: string;
+  classification: string;
+  unusualness: string;
+  explanation: string;
+  fundamentals: string;
+  peerSectorRelation: string;
+  ytdTakeaway: string;
+};
+
+export type Story = {
+  sections: StorySections;
   generatedAt: string;
 };
 
@@ -515,10 +536,17 @@ export type Activity = {
   news: NewsItem[];
   timeline: TimelineEntry[];
   events: UpcomingEvent[];
-  summary: DailySummary | null;
+  /** The Today's Story narrative, written once by the Groq end-of-day job. */
+  story: Story | null;
   /** This stock's change% against the average of its PEERS tickers. */
   peers: PeerComparison & { symbols: string[] };
   periodPerformance: PeriodPerformance;
+  /**
+   * The same rows periodPerformance was computed from, up to 370 days,
+   * oldest first — kept on the payload for the story charts (52-week range,
+   * YTD trend) rather than discarded once periodPerformance is derived.
+   */
+  dailyCloses: { tradingDay: string; close: number }[];
 };
 
 const SECTOR_SYMBOL = "XLK";
@@ -625,7 +653,7 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
   // One wave, not two: the timeline/events/summary queries only need `symbol`
   // and `sessionDay`, both already known, so they don't have to wait behind the
   // tickers/intraday/news queries above them.
-  const [tickers, intraday, news, timelineRows, eventRows, summary, dailyCloses] =
+  const [tickers, intraday, news, timelineRows, eventRows, storyRow, dailyCloses] =
     await Promise.all([
       // This page draws its own chart from getIntraday and renders no sparkline.
       // Uncached on purpose: the whole of getActivity is cached below, so going
@@ -667,14 +695,14 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
       // Absent is a normal answer here — a stock the post-close job has not
       // reached yet has no row — so this is the one read whose empty result is
       // meaningful rather than suspicious.
-      readMaybeOne<{ summary: string; bullets: string[] | null; generated_at: string }>(
-        `daily-summary:${symbol}`,
+      readMaybeOne<{ sections: StorySections; generated_at: string }>(
+        `story:${symbol}`,
         (signal) =>
           db
-            .from("daily_summaries")
-            .select("summary, bullets, generated_at")
+            .from("stories")
+            .select("sections, generated_at")
             .eq("symbol", symbol)
-            .eq("summary_date", sessionDay)
+            .eq("story_date", sessionDay)
             .abortSignal(signal)
             .maybeSingle(),
       ),
@@ -707,6 +735,7 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
     news,
     peers: { ...computePeerComparison(ticker.changePercent, peerChangePercents), symbols: peerSymbols },
     periodPerformance: computePeriodPerformance(dailyCloses, sessionDay),
+    dailyCloses,
     timeline: timelineRows.map((row) => ({
       at: row.event_at,
       kind: row.kind as TimelineEntry["kind"],
@@ -718,12 +747,8 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
       at: row.event_at,
       note: row.note ?? null,
     })),
-    summary: summary
-      ? {
-          narrative: summary.summary,
-          bullets: summary.bullets ?? [],
-          generatedAt: summary.generated_at as string,
-        }
+    story: storyRow
+      ? { sections: storyRow.sections, generatedAt: storyRow.generated_at as string }
       : null,
   };
 }

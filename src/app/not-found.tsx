@@ -35,7 +35,7 @@ export default function NotFound() {
           href="/todays-activity"
           className="panel-control px-4 py-2 text-sm font-semibold text-ink"
         >
-          Browse today&apos;s activity
+          Browse today&apos;s story
         </Link>
       </div>
     </div>

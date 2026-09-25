@@ -6,7 +6,7 @@ import { useEffect } from "react";
 // Three routes, so three shortcuts, and no more.
 //
 // The pattern is the two-key `g <letter>` sequence — "go home", "go news",
-// "go activity" — rather than a single accelerator or a modifier chord. Single
+// "go story" — rather than a single accelerator or a modifier chord. Single
 // letters would fire on any stray keystroke, and every useful modifier chord on
 // a Mac or Windows is already spoken for by the browser. The sequence is also
 // what Gmail, GitHub and Linear use, so a visitor who knows it anywhere knows
@@ -19,7 +19,7 @@ import { useEffect } from "react";
 export const SHORTCUTS: { key: string; href: string; label: string }[] = [
   { key: "h", href: "/", label: "Home" },
   { key: "n", href: "/news", label: "News" },
-  { key: "a", href: "/todays-activity", label: "Today's Activity" },
+  { key: "a", href: "/todays-activity", label: "Today's Story" },
 ];
 
 /** How long the leading `g` stays armed. */

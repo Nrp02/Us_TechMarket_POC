@@ -53,22 +53,21 @@ function ActivityIcon({ active }: IconProps) {
 
 // `phonePrefix` is the half of a label that is dropped below 600px. Only one
 // item has one, and it is the reason the card wraps to two rows on a phone:
-// "Today's Activity" is 152px of the ~330px the three labelled items need,
-// against a 342px content column. Shortened to "Activity" the row comes out at
-// ~292px inside a 32px-padded card and fits on one line at 390px.
+// this label is the longest of the three, so dropping the prefix on a phone is
+// what keeps the row on one line at narrow widths. The label used to read
+// "Today's Activity" / "Activity" — CLAUDE.md's rename note explains why the
+// visible text changed to "Today's Story" / "Story" while the URL, file names
+// and keyboard shortcut all stayed put.
 //
 // Split as a prefix rather than as a second `shortLabel` string so the two
 // spellings cannot drift: there is one label, and a phone shows the tail of it.
-// "Activity" is also what the route is called everywhere else a visitor meets
-// it — /todays-activity, and the nav glyph is the sparkline shape — so the
-// short form names the destination rather than abbreviating a title.
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: HomeIcon },
   { href: "/news", label: "News", icon: NewsIcon },
   {
     href: "/todays-activity",
     phonePrefix: "Today's ",
-    label: "Activity",
+    label: "Story",
     icon: ActivityIcon,
   },
 ] as const;
@@ -111,7 +110,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
           flex-wrap is the guarantee that this card can never widen the page.
           Below the width where three labelled items fit on one line the nav
           wraps to a second row instead of overflowing — the same reflow the
-          Today's Activity header already uses.
+          Today's Story header already uses.
 
           justify-between pushes the nav to the far end, which is the classic
           masthead split: the publication's name at one edge, the sections at
@@ -125,7 +124,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
             reason the card is not simply a strip of links. The rail
             gave it up when the wordmark moved to Home's masthead and recorded
             the consequence as a deliberate trade: News opens with "News" and
-            Today's Activity with a ticker, so a visitor landing on either had
+            Today's Story with a ticker, so a visitor landing on either had
             three nav items for orientation and nothing saying what this is.
             A card that is on screen everywhere makes the trade unnecessary.
 
@@ -255,7 +254,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
                 // whitespace-nowrap for the same reason the watchlist's
                 // column headers carry it: a label naming a destination is an
                 // identity, and the one thing in a row that should never
-                // reflow. Measured at 390px without it, "Today's Activity"
+                // reflow. Measured at 390px without it, "Today's Story"
                 // broke across two lines inside its own item and took the
                 // whole card from 62px to 82px to do it.
                 className={`flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
@@ -275,7 +274,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
                     two words is the trailing space in phonePrefix. */}
                 <span>
                   {/* Hidden rather than removed, so the accessible name on a
-                      laptop is still the full "Today's Activity" that the nav
+                      laptop is still the full "Today's Story" that the nav
                       has always announced. */}
                   {"phonePrefix" in item && (
                     <span className="hidden min-[600px]:inline">

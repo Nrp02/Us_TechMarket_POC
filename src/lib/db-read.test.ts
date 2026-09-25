@@ -170,7 +170,7 @@ test("an exact count that matches, or no count at all, does not throw", async ()
 });
 
 test("readMaybeOne returns null for an absent row without throwing", async () => {
-  // The daily_summaries lookup: no row is a normal answer for a stock that has
+  // The stories lookup: no row is a normal answer for a stock that has
   // not been summarised yet, and must stay distinguishable from a failed read.
   const rows = await readMaybeOne<{ id: number }>(
     "summary",

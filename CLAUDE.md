@@ -2,6 +2,16 @@
 
 > Read this whole file before writing any code. It is the single source of truth — every decision below was already argued through and locked with the project owner. Do not re-litigate a locked decision; if something here seems wrong, flag it, don't silently deviate.
 
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
+
 ## What you are building
 
 A school demo — an AI daily intelligence app for tracking US Technology stocks. Core question the product answers, per stock, once a day: **"What happened to this stock today?"**
@@ -60,7 +70,7 @@ language is not.
 | **Today's traded volume + intraday bars** | Yahoo Finance `query1.finance.yahoo.com/v8/finance/chart` | **Finnhub's free tier cannot supply this** — see the reversal note below. Scoped to this one gap only; unofficial endpoint, so callers treat failure as "volume unknown", never as an error. |
 | Average daily volume | Finnhub `/stock/metric` (`10DayAverageTradingVolume`, reported in millions) | Denominator for relative volume |
 | Market index proxies — all five cards | Finnhub `/quote` on ETF symbols: `QQQ` (NASDAQ 100), `SPY` (S&P 500), `DIA` (Dow Jones), `XLK` (Technology), `VIXY` (Volatility) | Confirmed live in Phase 1. Real index symbols (`^VIX`, `^GSPC`, `^IXIC`) return "Market data subscription required for CFD indices". `VIXY` tracks VIX **futures**, not VIX spot — the UI must not imply otherwise. |
-| Sector/Peers | Finnhub `/stock/peers` | Used inside Today's Activity, not a standalone page |
+| Sector/Peers | Sector: XLK, above. Peers: a **hardcoded map** (`PEERS` in `src/lib/symbols.ts`, Top-20 symbol → 2–4 peer tickers, populated by a one-time manual lookup) | Used inside Today's Story's Peers stat card and comparison section, not a standalone page. **Not a live Finnhub `/stock/peers` call** — this row used to imply one; the Today's Story build (see "Decisions that were explicitly reversed") replaced it with the hardcoded map so peer comparison costs no extra upstream call per cycle |
 | ~~SEC filings~~ | ~~SEC EDGAR Full-Text Search API~~ | **Never built, and not owed.** The SEC Filings tab was cut with the rest of the secondary tab bar in Phase 4, and this row is the only place the source survived — nothing in `src/` references EDGAR. Left visible because the row read as a locked requirement and a later pass could have built against it. Restoring it means a UI decision first, not a client. |
 | AI summarization | Gemini `gemini-3.5-flash` (free tier) | Batched — see "AI call budget" below. **Not 2.5 Flash**, which returns 404 for new users; see the model reversal note below. |
 | Company + Finnhub logos | Brandfetch Logo CDN (free to 500k req/month) | The one upstream the **browser** calls directly, and the only one that returns images rather than data. Hotlinked, never vendored — the licence caps caching at 30 days. See the logo note under "Decisions that were explicitly reversed". |
@@ -143,6 +153,37 @@ The fix is `src/lib/db-read.ts`, which every read goes through. Four things abou
 **It later fired for real, on a different read — see "The News page's date picker read the whole table" below.** The prediction above was right about the mechanism and wrong about which query would hit it first: `news`, not `intraday_snapshots`.
 
 **`src/lib/db-read.ts` imports nothing from `lib/supabase.ts`**, for the same mechanical reason recorded for `news-select.ts` and `watchlist.ts`: that module builds its client at module load and throws without env vars, so anything defined beside it cannot be loaded by the test runner. Keep it that way — it is what makes the retry and truncation logic testable at all.
+
+---
+
+## Phase 6 — News Topics: IN DESIGN, NOTHING BUILT
+
+**Read this first if you are picking work back up.** The owner and Claude are partway through a design interview (grilling session, started 2026-09-13) for a new AI feature. No code, schema or prompt has changed yet. Resume the interview from "Still open" below rather than starting to build.
+
+**Why it exists.** The owner asked whether the app's AI use is really worth it, and the honest answer was: not much. The news call mostly paraphrases (for copyright), the Daily Summary's `movement` restates figures the stat cards already show, and `explanation` is the fixed fallback line on ~7 of 10 stocks. The AI Safety rules correctly forbid causation and prediction, which left the model only re-telling. This feature gives it a job that is useful *and* inside those rules: **organising** the day's news (Filter → Understand), never judging its effect on price.
+
+**Decided:**
+
+- **The term is `Topic`** — what an article is about (e.g. Earnings, Product). Never call it "category": `category` already means the company / industry / market split on the News page. See `CONTEXT.md`.
+- **Scope of the first build:** one Topic label per article, plus a per-stock breakdown on Today's Activity that counts articles by Topic **in code**. The AI does **not** group articles into "stories" (same event, several outlets) in this build — that needs a stable story identity across cycles and days, and is deferred until labels prove useful.
+- **Zero extra Gemini calls.** Topic is added as a field to the existing news-summary call's schema (`src/lib/news-ingest.ts`), so the budget stays 12/20 per day.
+
+- **Placement: one card, not two.** The breakdown goes **inside the AI Daily Summary card, above the narrative** — the owner rejected a separate card as clutter. Bonus: that card currently reads "No summary for this session yet" all day until the close, and the breakdown fills it from the first news cycle. Three conditions agreed with it:
+  1. **Each half states its own time** ("News by topic · updated 2:00 PM ET" / "Summary · written after the close") — they come from different jobs and must not read as one refresh.
+  2. **The narrative's news part (`recap`) gets thinner in the same change**, or the card tells the day's news twice. How thin is still open.
+  3. **The breakdown is bounded in size** so the card does not push the chart off an iPad or phone screen.
+- **The card counts "12 articles in 3 Topics", never "3 stories"** — no story grouping exists in this build. **A row's text is the newest headline in that Topic**, not an AI gist of the group; nothing produces a per-group gist without another call.
+
+**Still open (ask these next, in this order):**
+
+1. *(settled — see Placement above)*
+2. The fixed Topic set. Draft: Earnings · Product · Deal · Regulatory & Legal · Analyst View · Market Wrap · Other. `Analyst View` stays separate because it is the one Topic whose content is opinion.
+3. Passing mentions: per article (fold into `Market Wrap`) vs per article × symbol. Claude recommended per article.
+4. ~1,400 already-summarised articles have no Topic, and `selectForSummary` never re-sends a summarised article. Recommended: no backfill run; spare slots in each cycle's 25-article batch label old articles, and the breakdown shows an explicit "n not yet labelled" count rather than silently undercounting.
+5. Report tone/sentiment: recommended **not** to build — beside a price chart it reads as causation.
+6. After those: the per-row text on the card, a Topic filter on the News page, schema/migration, prompt wording.
+
+**Do not re-derive:** there is no numeric "importance/impact score" in this design, for the same reason the Confidence Score was cut — an LLM grading itself is a weak signal; a Topic label is checkable by reading the article.
 
 ---
 
@@ -297,16 +338,16 @@ This is a single page per stock at `/todays-activity/[symbol]`, reached only thr
 
 Layout:
 1. **Header**: ticker only (`NVDA`, not "NVIDIA Corporation") which doubles as a button opening a dropdown of the watchlist stocks; selecting one navigates to that stock's route. *(Phase 4.5 adds `+`/`−` controls to this dropdown so the watchlist can be edited without leaving the page.)*
-2. **5 stat cards**: Price Movement, Trading Activity (relative volume), Sector Performance, Market Performance, News & Events count. All reuse data already fetched elsewhere — no new fetches.
+2. **7 stat cards**: Price Movement, Trading Activity (relative volume), Sector Performance, Market Performance, Peers, Period Performance, News & Events count. All reuse data already fetched elsewhere — no new fetches. *(Widened from 5 to 7 by the Today's Story build — see "Today's Story replaces the AI Daily Summary" under "Decisions that were explicitly reversed" below. Peers reads the hardcoded `PEERS` map in `src/lib/symbols.ts`, not a live Finnhub peers call — see the Data Sources table.)*
 3. **Significant Movement badge** — same shared rule from Phase 2, same import.
-4. **AI Daily Summary** — this is the core of the page and its role just changed: it now covers **everything** that happened to this stock today (price, volume, news, events) in one narrative, so the user never has to piece it together from separate sections. Because of that widened scope, feed it structured data (exact numbers, not prose) and instruct it not to compute or restate numbers on its own — the wider the summary's coverage, the more a small hallucination compounds. There is no separate "Top News" or "Related Stocks" section anymore — that content lives inside this summary now. This is the highest-stakes prompt in the app for the AI Safety / Data Integrity Rules below — the summary describes what happened, not why it definitely happened or what happens next.
+4. **Today's Story** — this is the core of the page. It replaced the original 3-field "AI Daily Summary" (narrative + bullets) with an 8-section ordered narrative covering price, volume, peer/sector/market comparison, historical unusualness, a causal explanation, fundamentals, and a year-to-date takeaway — see "Today's Story replaces the AI Daily Summary" below for what changed and why, including the one AI Safety rule it deliberately loosens. Displayed under the heading "Today's Story"; the page itself is still served at `/todays-activity/[symbol]` and reached via the nav item and keyboard shortcut both labeled "Today's Story" now — only the visible text changed, not the route, file names, or shortcut. Because of the narrative's widened scope, every section is fed structured data (exact numbers, not prose) and instructed not to compute or restate numbers on its own — the wider the coverage, the more a small hallucination compounds. There is no separate "Top News" or "Related Stocks" section — that content lives inside the headline and comparison sections now. This is the highest-stakes prompt in the app for the AI Safety / Data Integrity Rules below.
 5. **Price & Volume intraday chart** — reads from the same intraday snapshot table as everything else.
 6. **Today's Timeline** — rebuilt from the stored intraday snapshots and news on **every `intraday-snapshots` tick** (so roughly every 15 minutes during the session), and once more by the end-of-day job. Timeline events (market open, notable news, high-volume alert, price milestone, market close) are computed with simple threshold rules, not AI. **Reversed — this said "reconstructed once, during the end-of-day batch job" and forbade any intraday rebuild; see the reversal note below for why that was wrong and what the boundary actually is.** Every article of the day gets a row: there is no cap, so this agrees with the News & Events stat card above it.
 7. **Upcoming Events** — earnings date + earnings call only, from Finnhub's calendar. Do not invent a conference/event calendar (no free API covers it, and hand-entering events isn't "AI-powered" and doesn't scale).
 
 No Confidence Score. It was considered and cut — the natural version of it would be an LLM self-reporting its own confidence, which is a weak signal in practice; the 5-bullet reasoning already in the summary carries that job.
 
-**Done when**: switching stocks via the header dropdown routes correctly for all 10 watchlist stocks, the AI summary for 3 spot-checked stocks matches the underlying raw numbers exactly (read it yourself — don't trust that it's "probably fine"), and the timeline renders from stored snapshots with no live polling involved.
+**Done when**: switching stocks via the header dropdown routes correctly for all 10 watchlist stocks, Today's Story for 3 spot-checked stocks matches the underlying raw numbers exactly (read it yourself — don't trust that it's "probably fine"), and the timeline renders from stored snapshots with no live polling involved.
 
 ### Phase 5 — Automation, polish, deploy (Day 17–20)
 
@@ -416,7 +457,11 @@ The end-of-day summary schedule was provisioned in Phase 4, not here: `daily-sum
 
 ## AI call budget (keep this accurate — it's what keeps this inside free-tier limits)
 
-**The free tier's real limit is 20 requests per DAY, per model.** Measured in Phase 4, read off a live 429: `quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20`, for `gemini-3.5-flash`. Not per minute — the same key stayed refused for over 15 minutes. This closes the "Gemini free-tier rate limits" open item; the number came from the API itself, not the console and not the docs.
+**Two providers now, each with its own free-tier ceiling and its own job.** Gemini writes news summaries only; Groq writes the Today's Story narrative only. They do not share a quota — nothing here trades headroom between them — so each is budgeted separately below.
+
+**Gemini's real limit is 20 requests per DAY, per model.** Measured in Phase 4, read off a live 429: `quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20`, for `gemini-3.5-flash`. Not per minute — the same key stayed refused for over 15 minutes. This closes the "Gemini free-tier rate limits" open item; the number came from the API itself, not the console and not the docs.
+
+**Groq's real limit is the opposite shape: generous per-day, tight per-minute.** Measured live during planning for `openai/gpt-oss-20b`: a rolling **1,000 requests/day** budget (not the binding constraint) against **8,000 tokens/minute** (the binding constraint). This is why Today's Story is one Groq call per stock rather than a multi-stock batch — a per-minute token cap doesn't care how many requests it took to spend it, and a per-stock call is also what removes the multi-stock JSON-truncation failure mode already seen twice in this codebase with Gemini batches. On a 429, `story-generation.ts` does not retry immediately; it skips that stock for the current run and leaves it for the next scheduled run, the same pattern `selectForSummary` already uses for news. Verified live: two manual test runs in quick succession hit a real Groq 429, and the skip-and-defer path worked exactly as designed with no throw and no retry storm.
 
 - News summarization: **exactly 8 cycles/day × 1 call each = 8 calls/day.** The `news-ingest` schedule is `0 7,10,12,15,18,20,21,2 * * *` UTC — 03:00 / 06:00 / 08:00 / 11:00 / 14:00 / 16:00 / 17:00 / 22:00 ET under EDT, one hour earlier under EST. In ICT, which is the timezone the owner actually reads the site in and which never shifts: 14:00 / 17:00 / 19:00 / 22:00 / 01:00 / 03:00 / 04:00 / 09:00. One call per cycle regardless of article count; articles past the batch cap keep their next-cycle slot rather than adding a call. Seven of the eight land before the summary window, which is the point — see the sequencing note in Phase 5.
 
@@ -427,10 +472,14 @@ The end-of-day summary schedule was provisioned in Phase 4, not here: `daily-sum
   **Slots are chosen to shrink the largest waiting bucket, not to space evenly.** An article published in a given hour is stored by the first cycle after it, so each cycle owns a bucket of hours. Largest bucket: **312 articles at six cycles, 206 at seven, 133 at eight.**
 
   **Cycle count is also the ceiling on summarisation, and that ceiling was already being hit.** `MAX_PER_CYCLE` is 25, so seven cycles cap the day at 175 summaries against real days of 166 — and measured coverage had already slipped to 87% (2026-08-16) and 89% (2026-08-19), i.e. stored articles with no blurb. Eight cycles lift the cap to 200. Raising `MAX_PER_CYCLE` instead was rejected: an oversized batch truncates the model's JSON mid-string and loses every entry in it, which is the reason the cap exists.
-- Today's Activity summaries: **1 call per batch of 5 stocks.** All 20 stocks = **4 calls/day**, across 4 of the schedule's 12 ticks — one invocation places one call. (It was originally 1 call per stock, i.e. 10/day, and the daily cap made that untenable — see the reversal note below.)
+- **Gemini total: 8 calls/day** (news summarization only). Today's Activity's old 3-field Gemini summary (1 call per batch of 5 stocks, 4 calls/day for all 20) is **retired, superseded by Today's Story** — see "Today's Story replaces the AI Daily Summary" under "Decisions that were explicitly reversed". (It was originally 1 call per stock, i.e. 10/day, before that batching change — see the reversal note there for why that was untenable too.)
+
+  **This job's Supabase Cron entry (`daily-summaries` → `/api/daily-summary`) is still provisioned and has not been disabled.** Nothing reads its output any more (`queries.ts` reads `stories`, not `daily_summaries`), so those 4 Gemini calls/day are currently spent for no reason — real quota, no reader. Disabling that schedule is an infra change to the live Supabase Cron scheduler and was deliberately left for the owner to do, the same posture this file already takes with `npm run setup-cron` elsewhere (see the Today's Story cron entry below) — not something to silently "fix" by deleting the job's code, which is left in place on the same "don't delete, just stop reading it" precedent as the orphaned `watchlist` table.
+
+- **Groq total: up to 20 calls/day** (Today's Story only) — one call per Top-20 symbol, `STOCKS_PER_RUN = 2` paced across 10 of the same 12-tick `daily-summaries` schedule window Today's Activity's old job used (added as a second job in `scripts/setup-cron.mts`; **not yet provisioned against live Supabase Cron** — `npm run setup-cron` has not been run for it, deliberately left for the owner, same as any infra-affecting cron change). 2 ticks of headroom absorb a run that skips a rate-limited or failed stock.
 - Home page: **zero** AI calls (Daily Insight card was cut)
 
-Total: **12 calls/day against a ceiling of 20** (8 news cycles + 4 summary batches), and that is now a hard worst case rather than a nominal one: both jobs pass `retries: 0`, so a 429 or a 503 costs the cycle rather than silently spending two more requests. Never add a call that fires per-article or per-UI-interaction — every AI call in this product is batched and runs once, after market close, except the intraday news cycles, which are still batched (one call per cycle, not per article).
+Total across both providers: **28 calls/day worst case (8 Gemini + 20 Groq) against separate ceilings of 20/day and a Groq 8,000 TPM cap** — not a combined number against a single ceiling, since the two providers don't share a quota. Both jobs pass `retries: 0` (or Groq's own skip-and-defer, above), so a 429 or a 503 costs the cycle rather than silently spending two more requests. Never add a call that fires per-article or per-UI-interaction — every AI call in this product is batched or one-per-stock and runs once, after market close, except the intraday news cycles, which are still batched (one call per cycle, not per article).
 
 Budget headroom is not a nicety here. Every failed attempt still spends a request, and so does every manual trigger while testing. At the old 14–16/day the app was one debugging session away from a demo with no summaries in it, with no way to buy more before the next midnight Pacific reset.
 
@@ -461,7 +510,7 @@ One thing that looks like a mismatch and is not: `vercel env pull` cannot read t
 
 ## AI Safety / Data Integrity Rules
 
-This is the single source of truth for what the AI is and isn't allowed to say. Every prompt written in Phase 3 (news summarization) and Phase 4 (Today's Activity summary) must enforce this — don't restate a looser version of these rules in either phase, point back here instead.
+This is the single source of truth for what the AI is and isn't allowed to say. Every prompt written in Phase 3 (news summarization) and Phase 4 (Today's Story) must enforce this — don't restate a looser version of these rules in either phase, point back here instead. **One clause below is deliberately loosened for two of Today's Story's 8 sections only — see "Today's Story replaces the AI Daily Summary" under "Decisions that were explicitly reversed" for exactly what changed, why, and what did not change.**
 
 The product answers **"what happened"** — never "why did it definitely happen" and never "what happens next." That distinction is the whole boundary below.
 
@@ -471,7 +520,7 @@ The AI must never:
 - invent timestamps
 - invent numerical values
 - calculate new numerical values (all numbers come from structured input, pre-computed — the model states them, it doesn't derive them)
-- claim a causal relationship between news and price movement unless that relationship is explicitly stated in the source material — correlation in the data (e.g. "stock moved" + "news happened same day") is not itself grounds for the model to assert one caused the other
+- claim a causal relationship between news and price movement unless that relationship is explicitly stated in the source material — correlation in the data (e.g. "stock moved" + "news happened same day") is not itself grounds for the model to assert one caused the other. **Loosened for two of Today's Story's 8 sections ("explanation" and "peerSectorRelation") only — see the reversal note below.** Every other section, including News summarization and Today's Story's other 6 sections, still follows this rule exactly as written.
 - predict future stock prices or trends
 - offer investment recommendations or advice of any kind (buy/sell/hold framing, "looks like a good entry point," etc.)
 
@@ -497,7 +546,17 @@ These look like they contradict earlier reasoning in this doc. They're not mista
 - Market Overview: **5 cards** (not the originally-scoped 3 — Dow Jones and VIX are back in).
 - Company logos: **real logos**, not generic badges — accepted for this demo specifically because it won't see commercial deployment.
 - Sparklines: **included**, on both Home cards and watchlist rows — the earlier "skip sparklines to save time" call was reversed once the intraday snapshot table made them cheap.
-- Today's Activity page: **no secondary tab bar at all** — earlier mockups showed 8 tabs (Overview/News/Events/Financials/Charts/Peers/SEC Filings); all removed in favor of the shell nav + one dense AI summary.
+- Today's Activity page: **no secondary tab bar at all** — earlier mockups showed 8 tabs (Overview/News/Events/Financials/Charts/Peers/SEC Filings); all removed in favor of the shell nav + one dense AI narrative (now Today's Story — see below).
+
+- **Today's Story replaces the AI Daily Summary, and one AI Safety rule is deliberately loosened to make it worth having.** The page's narrative used to be a 3-field schema (`movement` / `recap` / `explanation`, see the "narrative is generated in three parts" entry below) written by Gemini and stored in `daily_summaries`. It is now an 8-section narrative (`headline`, `comparison`, `classification`, `unusualness`, `explanation`, `fundamentals`, `peerSectorRelation`, `ytdTakeaway` — `StorySections` in `src/lib/queries.ts` and `src/lib/story-generation.ts`) written by **Groq**, not Gemini, and stored in a new `stories` table (migration `0012_stories.sql`). The page reads it via `getActivity`'s `story` field and renders it in `src/components/todays-story.tsx`, which replaced `daily-summary-card.tsx` (deleted). The `daily_summaries` table, `src/lib/daily-summary.ts` and `/api/daily-summary` are **not deleted** — same "leave it, don't delete it" treatment as the orphaned `watchlist` table gets elsewhere in this file — but nothing reads `daily_summaries` any more, so **that job's Gemini calls are now spent for no reason until its Supabase Cron entry is disabled**; see the AI call budget below.
+
+  **The reason for the rebuild:** the old narrative mostly restated numbers the stat cards already showed, because the AI Safety rule against unstated causation left the model nothing to add beyond paraphrase (see "narrative is generated in three parts" below for the "Norway sovereign wealth fund" case that got that rule locked in the first place). Today's Story gives the model something to *do* — organize the day's price, volume, peer, sector, and fundamentals data into 8 specific analytical answers — without touching prediction or advice.
+
+  **What actually changed in the rule:** the "explanation" and "peerSectorRelation" sections may now infer a plausible, data-grounded connection between the day's news/peer/sector movement and the stock's price move **without** the source article stating that link explicitly — the opposite of the original rule, which required an explicit statement. Every other section of Today's Story, and all of News summarization, is still bound by the original rule with no exception.
+
+  **What stayed banned, in both old and new narratives, with no exception anywhere:** the model still never calculates a new number (every figure is pre-computed and handed to it — see `story-input.ts`), never predicts a future price or trend, and never gives investment advice of any kind.
+
+  **Why the tradeoff was accepted this time:** the original lock was justified by a real, reproduced failure — asked for a single unconstrained narrative, the model reliably asserted causation the sources never claimed. That failure mode was a symptom of an *unconstrained* prompt, not of inference itself. Today's Story's "explanation" and "peerSectorRelation" sections are narrowly scoped (only these two of 8), explicitly fed the exact peer/sector/market figures and news metadata needed to ground an inference, and required to fall back to a fixed honest line (`NO_EXPLANATION` / `NO_RELATION` in `story-generation.ts`) rather than reach for a guess when the data doesn't support one — the same fallback-line discipline used everywhere else in the app. The owner accepted the risk of an occasional over-confident inference in exchange for a narrative that says something about *why*, which is the whole reason this feature exists — see `.scratch/todays-story/spec.md`'s Problem Statement.
 
 - **Today's Timeline is rebuilt every 15 minutes during the session, not once at the close.** Phase 4 forbade this outright ("Do not build any real-time listener or intraday cron for this — it would contradict the 'AI runs only after market close' principle"). The owner reversed it: the page should be useful whenever it is opened, and under the old rule the entire trading day showed an empty timeline reading "the timeline is built after the close".
 
@@ -524,6 +583,8 @@ The three below were forced by what the free tiers actually do, discovered by pr
 - **Model: `gemini-3.5-flash`, not Gemini 2.5 Flash.** `gemini-2.5-flash` still appears in the model list but `generateContent` returns 404 *"no longer available to new users"*; `gemini-2.5-flash-lite` is gone the same way. Pinned rather than the `gemini-flash-latest` alias, so the summarisation prompt cannot shift under a graded demo. **Reasoning is capped at `thinkingBudget: 2048`** — unbounded reasoning made latency wildly variable (a 13-article batch once took *longer* than a 40-article one, blowing past the 60s function limit), and capping it cut a cycle from ~50s to ~13s and token use from ~20k to ~2.8k. It is not set to 0: some reasoning measurably improves adherence to the safety rules.
 - **Today's Activity summaries are batched: one Gemini call per 5 stocks, not one per stock.** **Ratified by the owner.** This contradicts the AI call budget as originally written ("1 call per watchlist stock/day ≈ up to 10 calls/day"), but the alternative was worse. Phase 4.5 keeps the batch size at 5 and widens coverage to all 20 stocks — 4 calls/day. The free tier allows 20 requests/day for this model (measured — see the AI call budget above), so one call per stock spent half the day's entire quota on one job, leaving nothing for a re-run, a failure, or a manual trigger before a demo. Batched, the whole watchlist costs 2 calls and the app runs at ~6–8/day. Batch size is capped at 5 rather than 10 for the reason the news pipeline already found: an oversized batch truncates the model's JSON mid-string and loses every entry in it. Per-stock summary quality was checked against the batched output and did not visibly suffer.
 - **The Today's Activity narrative is generated in three parts and joined, not written as one block.** `movement` (price/volume, no news), `recap` (news, no price), `explanation` (the only field allowed to link them). This exists purely to make the no-causal-claims rule hold. Asked for a single narrative, the model reliably asserted causation the sources never claimed — *"Apple's stock price increased **as** Norway's sovereign wealth fund disclosed a position"* — and listing banned wordings did not stop it, because "does the source state this link" is a judgement it makes generously. Split, the fixed fallback line went from rarely used to used on 7 of 10 stocks, with the other 3 attributed to reports that genuinely made the claim. Do not merge these fields back into one prompt.
+
+  **This 3-field schema and the Gemini job that wrote it are superseded by Today's Story** (see "Today's Story replaces the AI Daily Summary" above) — kept here because the reasoning behind the original 3-way split is exactly what justifies Today's Story's own, narrower loosening of the same rule. The underlying finding — an unconstrained prompt reaches for causation, a narrowly scoped one with a fallback line mostly doesn't — is why the new rule was written the way it was, not a reason to distrust it.
 - **News categories are drawn from per-symbol tagging, not from Finnhub's news categories.** *(Phase 4.5 keeps these three definitions but computes company-vs-industry per request from `related_symbols` instead of writing it into the row — a per-visitor watchlist makes a stored value meaningless.)* `/news?category=technology` and `/news?category=general` return byte-identical articles (100 of 100 ids overlap), carry no tickers, and are general world/business news. So `company` = watchlist symbols, `industry` = the other Top 20 tech companies, `market` = the general feed. Calling that general feed "Technology Industry News" would simply be false.
 - **Company news is relevance-filtered before storage.** Finnhub attaches a queried symbol to articles that are not about that company at all — measured at 55% of results, e.g. a Yeti story and a Pan American Silver story both tagged `NVDA`. An article is only stored under a symbol when its headline or snippet actually references that company (`mentionsSymbol` in `src/lib/symbols.ts`). This is plain string matching, **not** AI inference, so the "tickers come from Finnhub's field, never inferred by a model" rule still holds. Mis-tagging fell from 55% to ~13%.
 - **Company logos: two icon libraries covering 17 of 20, lettermark plate for the remaining 3.** Simple Icons no longer ships marks for Microsoft, Amazon, Oracle, Salesforce, Adobe, Texas Instruments, Micron, or ServiceNow, so it alone covered only 12. The marks are now **vendored locally as static SVG under `public/logos/`** — no runtime npm dependency — from two free-to-use icon libraries, recorded per the logo-sourcing rule:

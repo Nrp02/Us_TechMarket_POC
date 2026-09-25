@@ -4,11 +4,11 @@ import { ActivityStats } from "@/components/activity-stats";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { AddStockMenu } from "@/components/add-stock-menu";
 import { CompanyLogo } from "@/components/company-logo";
-import { DailySummaryCard } from "@/components/daily-summary-card";
 import { IntradayChart } from "@/components/intraday-chart";
 import { SectionHeading } from "@/components/section-heading";
 import { StatusBadge } from "@/components/status-badge";
 import { SymbolSwitcher } from "@/components/symbol-switcher";
+import { TodaysStory } from "@/components/todays-story";
 import { UpcomingEvents } from "@/components/upcoming-events";
 import { formatChange, formatDay, formatPercent, formatPrice } from "@/lib/format";
 import { getActivity } from "@/lib/queries";
@@ -20,7 +20,7 @@ import {
 } from "@/lib/watchlist";
 
 // One page per stock, reached through the nav card and the header switcher. There
-// is no secondary tab bar by design — the dense AI summary below replaces the
+// is no secondary tab bar by design — Today's Story below replaces the
 // Overview/News/Events/Financials/Charts/Peers tabs the early mockups had.
 //
 // Reads cached tables only. No upstream call, and no AI call: the narrative was
@@ -195,7 +195,7 @@ export default async function TodaysActivityForSymbol({
 
       <ActivityStats activity={activity} />
 
-      <DailySummaryCard summary={activity.summary} symbol={ticker.symbol} />
+      <TodaysStory activity={activity} />
 
       {/* The chart takes the events panel as its sidebar, and the timeline runs
           the full width beneath them both.
