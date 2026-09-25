@@ -1,0 +1,141 @@
+// Composes every "Today's Story" computation engine plus the day's news into
+// one payload for the (later) Groq narrative call. Pure and free of any
+// database import, same reason every engine it calls is — the caller loads
+// the day's data first (queries.ts already does, for the existing Activity
+// payload) and passes it in; this function makes no network or database call
+// of its own.
+//
+// Every field below is a number or a value from one engine's fixed label set
+// — never free text. Phrasing that into prose is the narrative call's job,
+// not this one's.
+
+import { classifyEarningsSurprise, classifyGrowthTrend, type EarningsSurprise, type GrowthTrend } from "./fundamentals.ts";
+import { classifyMovement, type MovementClassification } from "./movement-classification.ts";
+import { computeDivergence, computePeerComparison, type Divergence, type PeerComparison } from "./peer-comparison.ts";
+import type { PeriodPerformance } from "./period-performance.ts";
+import { isSignificant, significanceScore } from "./significance.ts";
+import { computeRangePosition, computeVolatilityPercentile, type RangeLabel } from "./volatility.ts";
+
+export type StoryDailyClose = {
+  tradingDay: string;
+  close: number;
+  /** Null for a backfilled row that predates change/change_percent being stored. */
+  changePercent: number | null;
+};
+
+export type StoryFundamentals = {
+  epsGrowthQuarterlyYoY: number | null;
+  epsGrowthTtmYoY: number | null;
+  revenueGrowthQuarterlyYoY: number | null;
+  revenueGrowthTtmYoY: number | null;
+  latestEarningsPeriod: string | null;
+  latestEarningsSurprisePercent: number | null;
+};
+
+export type StoryNewsItem = {
+  headline: string;
+  sourceUrl: string;
+  publishedAt: string;
+  relatedSymbols: string[];
+};
+
+export type StoryInputParams = {
+  symbol: string;
+  sessionDay: string;
+  price: number;
+  changePercent: number;
+  relativeVolume: number | null;
+  peerSymbols: string[];
+  /** Already filtered to peers with a known price — see computePeerComparison. */
+  peerChangePercents: number[];
+  /** Null before this session's sector/market proxy has been fetched. */
+  sectorChangePercent: number | null;
+  marketChangePercent: number | null;
+  /** Up to 370 days, any order, may or may not include today's own row. */
+  dailyCloses: StoryDailyClose[];
+  /** Reused from queries.ts's existing computePeriodPerformance call, not rebuilt here. */
+  periodPerformance: PeriodPerformance;
+  /** Null when `fundamentals` has no row yet for this symbol. */
+  fundamentals: StoryFundamentals | null;
+  news: StoryNewsItem[];
+};
+
+export type StoryInput = {
+  symbol: string;
+  sessionDay: string;
+  price: { price: number; changePercent: number };
+  significance: { score: number; significant: boolean };
+  peers: PeerComparison & { symbols: string[] };
+  divergence: Divergence;
+  movementClassification: MovementClassification;
+  volatility: {
+    percentile: number | null;
+    rangePosition: number | null;
+    rangeLabel: RangeLabel | null;
+  };
+  periodPerformance: PeriodPerformance;
+  fundamentals:
+    | (StoryFundamentals & {
+        earningsSurprise: EarningsSurprise;
+        epsGrowthTrend: GrowthTrend;
+        revenueGrowthTrend: GrowthTrend;
+      })
+    | null;
+  news: StoryNewsItem[];
+};
+
+export function buildStoryInput(params: StoryInputParams): StoryInput {
+  const {
+    symbol,
+    sessionDay,
+    price,
+    changePercent,
+    relativeVolume,
+    peerSymbols,
+    peerChangePercents,
+    sectorChangePercent,
+    marketChangePercent,
+    dailyCloses,
+    periodPerformance,
+    fundamentals,
+    news,
+  } = params;
+
+  const divergence = computeDivergence(changePercent, sectorChangePercent, marketChangePercent);
+
+  // Today's own row (if present in `dailyCloses`) must not count as history
+  // for its own percentile rank.
+  const historicalChangePercents = dailyCloses
+    .filter((row) => row.tradingDay !== sessionDay && row.changePercent !== null)
+    .map((row) => row.changePercent as number);
+  const rangePosition = computeRangePosition(price, dailyCloses.map((row) => row.close));
+
+  return {
+    symbol,
+    sessionDay,
+    price: { price, changePercent },
+    significance: {
+      score: significanceScore(changePercent, relativeVolume),
+      significant: isSignificant(changePercent, relativeVolume),
+    },
+    peers: { ...computePeerComparison(changePercent, peerChangePercents), symbols: peerSymbols },
+    divergence,
+    movementClassification: classifyMovement(divergence.vsMarketPercent),
+    volatility: {
+      percentile: computeVolatilityPercentile(changePercent, historicalChangePercents),
+      rangePosition: rangePosition.position,
+      rangeLabel: rangePosition.label,
+    },
+    periodPerformance,
+    fundamentals: fundamentals && {
+      ...fundamentals,
+      earningsSurprise: classifyEarningsSurprise(fundamentals.latestEarningsSurprisePercent),
+      epsGrowthTrend: classifyGrowthTrend(fundamentals.epsGrowthQuarterlyYoY, fundamentals.epsGrowthTtmYoY),
+      revenueGrowthTrend: classifyGrowthTrend(
+        fundamentals.revenueGrowthQuarterlyYoY,
+        fundamentals.revenueGrowthTtmYoY,
+      ),
+    },
+    news,
+  };
+}

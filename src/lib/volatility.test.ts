@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { computeRangePosition, computeVolatilityPercentile } from "./volatility.ts";
+
+test("percentile is the share of historical |moves| today's move meets or beats", () => {
+  // Today's |2%| beats 1 and -1.5 (both < 2 in magnitude) out of 4 historical
+  // moves, so 2/4 = 50th percentile.
+  const percentile = computeVolatilityPercentile(2, [1, -1.5, 3, -4]);
+  assert.equal(percentile, 50);
+});
+
+test("a move bigger than the whole history sits at the 100th percentile", () => {
+  assert.equal(computeVolatilityPercentile(10, [1, -2, 3]), 100);
+});
+
+test("a move smaller than the whole history sits at the 0th percentile", () => {
+  assert.equal(computeVolatilityPercentile(0.1, [1, -2, 3]), 0);
+});
+
+test("only magnitude counts, not direction", () => {
+  assert.equal(computeVolatilityPercentile(-5, [1, -2, 3]), computeVolatilityPercentile(5, [1, -2, 3]));
+});
+
+test("no history yields null, never a fabricated percentile", () => {
+  assert.equal(computeVolatilityPercentile(2, []), null);
+});
+
+test("range position is (price - min) / (max - min), labeled by thirds", () => {
+  assert.deepEqual(computeRangePosition(95, [60, 100]), { position: (95 - 60) / (100 - 60), label: "near-high" });
+  assert.deepEqual(computeRangePosition(62, [60, 100]), { position: (62 - 60) / (100 - 60), label: "near-low" });
+  assert.deepEqual(computeRangePosition(80, [60, 100]), { position: 0.5, label: "mid-range" });
+});
+
+test("a zero-width range (one stored close, or a flat year) yields null, not a divide-by-zero", () => {
+  assert.deepEqual(computeRangePosition(60, [60]), { position: null, label: null });
+  assert.deepEqual(computeRangePosition(60, [60, 60, 60]), { position: null, label: null });
+});
+
+test("no history yields null", () => {
+  assert.deepEqual(computeRangePosition(60, []), { position: null, label: null });
+});

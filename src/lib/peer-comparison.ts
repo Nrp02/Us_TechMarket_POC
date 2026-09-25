@@ -30,3 +30,39 @@ export function computePeerComparison(
     vsPeersPercent: stockChangePercent - peerAveragePercent,
   };
 }
+
+/** "same" and "opposite" compare sign only, never magnitude. */
+export type DivergenceDirection = "same" | "opposite" | "flat" | null;
+
+export type Divergence = {
+  vsSectorPercent: number | null;
+  vsMarketPercent: number | null;
+  vsSectorDirection: DivergenceDirection;
+  vsMarketDirection: DivergenceDirection;
+};
+
+function direction(stockChangePercent: number, otherChangePercent: number | null): DivergenceDirection {
+  if (otherChangePercent === null) return null;
+  if (stockChangePercent === 0 || otherChangePercent === 0) return "flat";
+  return Math.sign(stockChangePercent) === Math.sign(otherChangePercent) ? "same" : "opposite";
+}
+
+/**
+ * How far today's move sits from the sector (XLK) and market (SPY) proxies,
+ * plus whether the stock moved the same way as each. `sectorChangePercent`/
+ * `marketChangePercent` are null before the first refresh of a session (see
+ * `Activity.sector`/`.market` in queries.ts) — every field mirrors that
+ * nullability rather than substituting a zero.
+ */
+export function computeDivergence(
+  stockChangePercent: number,
+  sectorChangePercent: number | null,
+  marketChangePercent: number | null,
+): Divergence {
+  return {
+    vsSectorPercent: sectorChangePercent === null ? null : stockChangePercent - sectorChangePercent,
+    vsMarketPercent: marketChangePercent === null ? null : stockChangePercent - marketChangePercent,
+    vsSectorDirection: direction(stockChangePercent, sectorChangePercent),
+    vsMarketDirection: direction(stockChangePercent, marketChangePercent),
+  };
+}
