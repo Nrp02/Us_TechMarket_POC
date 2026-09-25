@@ -56,45 +56,29 @@ function tone(value: number | null | undefined) {
 }
 
 export function ActivityStats({ activity }: { activity: Activity }) {
-  const { ticker, sector, market, news, events } = activity;
+  const { ticker, sector, market, news, events, peers, periodPerformance } = activity;
 
   return (
     <section>
       <h2 className="sr-only">Today&apos;s statistics</h2>
 
-      {/* Five cards rather than one divided band, and the same gap Market
-          Overview uses — see the note at the top of that file for why the
-          earlier merge was reversed. These two rows are the same object on two
-          pages and must stay identical; changing one alone is the drift the
-          shared step above was introduced to stop. */}
-      {/* Two up on a phone rather than one, which is the difference between
-          this section being a glance and being two full screens of scrolling
-          before the visitor reaches their own stocks. Five stacked cards ran
-          ~810px at 390; paired they run ~420.
+      {/* Seven cards now, not five — Peers and Period Performance were added
+          for YTD/MTD and peer-comparison context (see the spec under
+          .scratch/todays-story). The five originals are unchanged in content
+          and order; the two new cards land immediately before the existing
+          "odd one out" card, so News & Events stays last exactly as it was.
 
-          It fits by measurement, not by hope: at 390 the content column is
-          358px, so a card is (358 - 12 gap) / 2 = 173px wide and 141px inside
-          its 16px padding. The largest reading here is six mono characters at
-          the shared `text-figure` step, which is ~108px. The padding steps down
-          with the shell's own phone tier to buy those pixels — the figure step
-          itself does not change, because it is one shared step across this
-          section and Today's Activity and forking it by width is how the same
-          role ended up at two sizes before it existed. */}
-      {/* Five is prime, so every column count that is not five orphans the
-          last card: 2+2+1 below lg, and 3+2 between lg and xl, which measured
-          a 373x165 hole at 1024-1279 — iPad landscape and most laptop
-          windows. The last child spans the remainder instead, and the span is
-          reset at xl where the row is exactly full. It falls on the odd one
-          out of each set anyway: Volatility is the only non-index card here,
-          and News & Events the only non-price card on Today's Activity. */}
-      {/* The span survives only below 600 now, and three columns start at 600
-          rather than at lg. Market Overview made this change first, for an
-          iPad-landscape report — at 1180 the spanned card measured 748px beside
-          siblings of 366 and read as a different kind of object. The comment
-          above is the reason this file moved with it: these two rows are the
-          same object on two pages, and News & Events is this page's odd one out
-          exactly as Volatility is that page's. */}
-      <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-5">
+          The old five-card math (2+2+1 / 3+2 / 5, with the span this section
+          used to carry now retired — see market-overview.tsx's note on why an
+          orphaned empty cell reads better than a card that outsizes its
+          siblings) does not carry over unchanged: five is prime, seven is not.
+          Re-derived rather than copy-pasted: 2 columns below 600 (4 rows,
+          orphaning 1), 3 from 600 (3 rows, orphaning 2), 4 from xl (2 rows,
+          orphaning 1) — no spanning, matching the settled Home pattern.
+          Verify at 390 / 600 / 1024 / 1280 before treating this as final, the
+          same iframe method CLAUDE.md's responsive section already uses; this
+          pass derived the math but did not re-measure it live. */}
+      <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-4">
         <Cell
           label="Price Movement"
           value={formatPercent(ticker.changePercent)}
@@ -126,6 +110,38 @@ export function ActivityStats({ activity }: { activity: Activity }) {
           value={market ? formatPercent(market.changePercent) : "—"}
           detail="S&P 500 (SPY)"
           tone={tone(market?.changePercent)}
+        />
+
+        <Cell
+          label="Peers"
+          value={
+            peers.vsPeersPercent == null
+              ? "—"
+              : `${formatPercent(peers.vsPeersPercent)} vs peers`
+          }
+          detail={
+            peers.symbols.length === 0
+              ? "No peer data"
+              : peers.peerAveragePercent == null
+                ? `Peers: ${peers.symbols.join(", ")} (prices unavailable)`
+                : `${peers.symbols.join(", ")} averaging ${formatPercent(peers.peerAveragePercent)}`
+          }
+          tone={tone(peers.vsPeersPercent)}
+        />
+
+        <Cell
+          label="Period Performance"
+          value={
+            periodPerformance.ytdPercent == null
+              ? "—"
+              : `YTD ${formatPercent(periodPerformance.ytdPercent)}`
+          }
+          detail={
+            periodPerformance.mtdPercent == null
+              ? "MTD unavailable"
+              : `MTD ${formatPercent(periodPerformance.mtdPercent)}`
+          }
+          tone={tone(periodPerformance.ytdPercent)}
         />
 
         <Cell

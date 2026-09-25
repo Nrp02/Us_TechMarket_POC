@@ -30,11 +30,60 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
   return { price: raw.c, change: raw.d ?? 0, changePercent: raw.dp ?? 0 };
 }
 
-/** 10-day average daily volume, in shares (Finnhub reports it in millions). */
-export async function fetchAvgVolume(symbol: string): Promise<number | null> {
+export type Metrics = {
+  avgVolume: number | null;
+  epsGrowthQuarterlyYoy: number | null;
+  epsGrowthTtmYoy: number | null;
+  revenueGrowthQuarterlyYoy: number | null;
+  revenueGrowthTtmYoy: number | null;
+  grossMarginTtm: number | null;
+  netMarginTtm: number | null;
+};
+
+/**
+ * One `/stock/metric?metric=all` call, covering both average volume (used on
+ * every warm run) and the growth/margin fields `fundamentals` wants (used
+ * only when that row is missing/stale). A single caller wanting only one half
+ * still pays for one call, not two — this used to be two separate functions
+ * hitting the identical endpoint, which cost two Finnhub calls in one cycle
+ * for any symbol needing both at once.
+ */
+export async function fetchMetrics(symbol: string): Promise<Metrics> {
   const raw = await get<{ metric?: Record<string, number> }>(
     `/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`,
   );
-  const millions = raw.metric?.["10DayAverageTradingVolume"];
-  return millions ? Math.round(millions * 1_000_000) : null;
+  const m = raw.metric ?? {};
+  const millions = m["10DayAverageTradingVolume"];
+  return {
+    avgVolume: millions ? Math.round(millions * 1_000_000) : null,
+    epsGrowthQuarterlyYoy: m["epsGrowthQuarterlyYoy"] ?? null,
+    epsGrowthTtmYoy: m["epsGrowthTTMYoy"] ?? null,
+    revenueGrowthQuarterlyYoy: m["revenueGrowthQuarterlyYoy"] ?? null,
+    revenueGrowthTtmYoy: m["revenueGrowthTTMYoy"] ?? null,
+    grossMarginTtm: m["grossMarginTTM"] ?? null,
+    netMarginTtm: m["netProfitMarginTTM"] ?? null,
+  };
+}
+
+export type LatestEarnings = {
+  period: string;
+  surprisePercent: number | null;
+};
+
+/**
+ * Most recent quarter's surprise%, or null if none reported yet.
+ *
+ * `/stock/earnings` responds with a plain array (not wrapped in an object),
+ * unlike every other Finnhub endpoint this file calls — confirmed live during
+ * planning against the real API for AAPL.
+ */
+export async function fetchLatestEarnings(symbol: string): Promise<LatestEarnings | null> {
+  const rows = await get<{ period: string; surprisePercent: number | null }[]>(
+    `/stock/earnings?symbol=${encodeURIComponent(symbol)}`,
+  );
+  if (!rows.length) return null;
+
+  // Highest `period` (a "YYYY-MM-DD" quarter-end date) is the most recent one.
+  const latest = rows.reduce((a, b) => (b.period > a.period ? b : a));
+  return { period: latest.period, surprisePercent: latest.surprisePercent ?? null };
 }

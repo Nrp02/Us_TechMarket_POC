@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "node --experimental-strip-types --import ./scripts/test-resolve.mts --test \"src/**/*.test.ts\"",
     "migrate": "node --experimental-strip-types --env-file=.env.local scripts/migrate.mts",
-    "setup-cron": "node --experimental-strip-types --env-file=.env.local scripts/setup-cron.mts"
+    "setup-cron": "node --experimental-strip-types --env-file=.env.local scripts/setup-cron.mts",
+    "backfill-daily-closes": "node --experimental-strip-types --env-file=.env.local scripts/backfill-daily-closes.mts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

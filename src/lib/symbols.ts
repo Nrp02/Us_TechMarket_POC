@@ -48,6 +48,41 @@ export const INDEX_CARDS: IndexCard[] = [
   { label: "Volatility", symbol: "VIXY", note: "VIXY futures ETF" },
 ];
 
+/**
+ * 2-4 peer tickers per Top-20 symbol, from a one-time manual lookup (Finnhub
+ * `/stock/peers`, cross-checked by hand) rather than a live per-tick call —
+ * peer relationships don't change day to day. Every value is itself a
+ * TOP_20_SYMBOLS member, which is what lets the Peers card read peer prices
+ * out of price_cache (already holding every Top-20 row) with zero new
+ * upstream calls.
+ *
+ * TSLA has no real automotive peer in this tech-only universe, so its entries
+ * are the closest adjacent large-cap tech names rather than a true peer set —
+ * the one deliberate compromise in this table.
+ */
+export const PEERS: Record<string, string[]> = {
+  NVDA: ["AMD", "AVGO", "QCOM"],
+  AAPL: ["MSFT", "GOOGL", "AMZN"],
+  MSFT: ["GOOGL", "AAPL", "ORCL", "CRM"],
+  GOOGL: ["MSFT", "META", "AMZN"],
+  AMZN: ["MSFT", "GOOGL", "META"],
+  META: ["GOOGL", "AMZN", "MSFT"],
+  AVGO: ["QCOM", "TXN", "NVDA", "MU"],
+  TSLA: ["NVDA", "AMD"],
+  ORCL: ["MSFT", "CRM", "NOW", "ADBE"],
+  PLTR: ["NOW", "CRM"],
+  AMD: ["NVDA", "INTC", "QCOM"],
+  CRM: ["ORCL", "NOW", "ADBE", "INTU"],
+  CSCO: ["AVGO", "QCOM", "INTC"],
+  ADBE: ["CRM", "INTU", "MSFT"],
+  INTC: ["AMD", "QCOM", "TXN", "MU"],
+  QCOM: ["AVGO", "TXN", "NVDA"],
+  TXN: ["QCOM", "AVGO", "MU"],
+  MU: ["INTC", "TXN", "QCOM"],
+  NOW: ["CRM", "ORCL", "ADBE"],
+  INTU: ["ADBE", "CRM", "NOW"],
+};
+
 export const INDEX_SYMBOLS = INDEX_CARDS.map((c) => c.symbol);
 export const TOP_20_SYMBOLS = TOP_20.map((s) => s.symbol);
 export const ALL_SYMBOLS = [...TOP_20_SYMBOLS, ...INDEX_SYMBOLS];

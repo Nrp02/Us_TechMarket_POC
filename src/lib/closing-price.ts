@@ -37,12 +37,18 @@ import type { Bar } from "@/lib/yahoo";
  * against the previous close, so that baseline is recovered from the pair it
  * already sent rather than fetched again.
  */
-export function reconcileClose(quote: Quote, bars: Bar[]): Quote {
+/** The same closing-bar search reconcileClose uses internally, exposed so a caller can ask "did it actually substitute?" without reconcileClose's return shape having to carry that flag. */
+function pickClosingBar(bars: Bar[]): Bar | null {
   let closingBar: Bar | null = null;
   for (const bar of bars) {
     if (!isAtOrAfterClose(bar.at)) continue;
     if (!closingBar || bar.at > closingBar.at) closingBar = bar;
   }
+  return closingBar;
+}
+
+export function reconcileClose(quote: Quote, bars: Bar[]): Quote {
+  const closingBar = pickClosingBar(bars);
   if (!closingBar) return quote;
 
   // Left alone rather than half-applied: a baseline this shape means the quote
@@ -57,4 +63,22 @@ export function reconcileClose(quote: Quote, bars: Bar[]): Quote {
     change,
     changePercent: (change / previousClose) * 100,
   };
+}
+
+/**
+ * True only when reconcileClose would actually substitute the official
+ * closing print for `quote` — i.e. a closing bar exists AND the quote's own
+ * baseline is well-formed. A bar at/after the bell is not enough on its own:
+ * reconcileClose falls back to the raw (possibly after-hours-drifted or
+ * malformed) quote when the baseline check fails, and a caller that only
+ * checked for a closing bar would then treat that unswapped quote as the
+ * day's official close. Unlike price_cache, daily_closes has no next tick to
+ * self-correct on — it is written once per trading day and kept — so writing
+ * it needs this stronger check, not the bar-presence check reconcileClose
+ * itself starts from.
+ */
+export function hasReliableClose(quote: Quote, bars: Bar[]): boolean {
+  const closingBar = pickClosingBar(bars);
+  if (!closingBar) return false;
+  return quote.price - quote.change > 0;
 }

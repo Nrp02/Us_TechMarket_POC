@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { reconcileClose } from "./closing-price.ts";
+import { hasReliableClose, reconcileClose } from "./closing-price.ts";
 import type { Bar } from "./yahoo.ts";
 
 // price_cache feeds the header, the Home watchlist and the AI summary's
@@ -78,4 +78,29 @@ test("a malformed baseline is left alone rather than half-applied", () => {
   // for a contradiction between two figures shown side by side.
   const broken = { price: 10, change: 10, changePercent: 0 };
   assert.deepEqual(reconcileClose(broken, [bar("20:00", 9.5)]), broken);
+});
+
+// hasReliableClose backs daily_closes: unlike price_cache, that table has no
+// next tick to self-correct on, so a caller writing to it needs to know
+// whether reconcileClose actually substituted the closing print, not merely
+// whether a bar at/after the bell exists.
+test("a closing bar with a well-formed baseline is reliable", () => {
+  const good = quote(214.75, -2.1);
+  assert.equal(hasReliableClose(good, [bar("20:00", 214.72)]), true);
+});
+
+test("no closing bar is never reliable, regardless of the quote", () => {
+  const good = quote(214.75, -2.1);
+  assert.equal(hasReliableClose(good, [bar("19:45", 214.75)]), false);
+  assert.equal(hasReliableClose(good, []), false);
+});
+
+test("a closing bar with a malformed baseline is not reliable, even though reconcileClose falls back silently", () => {
+  const broken = { price: 10, change: 10, changePercent: 0 };
+  const bars = [bar("20:00", 9.5)];
+  // reconcileClose quietly returns the untouched (broken) quote here — see the
+  // test above — which is exactly the case a caller must be able to tell apart
+  // from a genuine substitution before treating the result as history.
+  assert.deepEqual(reconcileClose(broken, bars), broken);
+  assert.equal(hasReliableClose(broken, bars), false);
 });

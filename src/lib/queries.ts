@@ -4,9 +4,11 @@ import { readMaybeOne, readRows } from "@/lib/db-read";
 import { dayWindow, tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
 import { newsRetentionCutoff } from "@/lib/news-retention";
+import { computePeerComparison, type PeerComparison } from "@/lib/peer-comparison";
+import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
 import { isSignificant, relativeVolume, significanceScore } from "@/lib/significance";
 import { db } from "@/lib/supabase";
-import { NAME_BY_SYMBOL } from "@/lib/symbols";
+import { NAME_BY_SYMBOL, PEERS } from "@/lib/symbols";
 
 // Every Home page read comes from here. Nothing in this file calls an upstream
 // API — the tables are filled by lib/refresh.ts.
@@ -514,10 +516,36 @@ export type Activity = {
   timeline: TimelineEntry[];
   events: UpcomingEvent[];
   summary: DailySummary | null;
+  /** This stock's change% against the average of its PEERS tickers. */
+  peers: PeerComparison & { symbols: string[] };
+  periodPerformance: PeriodPerformance;
 };
 
 const SECTOR_SYMBOL = "XLK";
 const MARKET_SYMBOL = "SPY";
+
+/**
+ * One symbol's daily_closes history, oldest bound by the table's own 370-day
+ * retention rather than a limit here — 370 rows is nowhere near PostgREST's
+ * 1000-row ceiling, so no exact count is asked for (see db-read.ts's rule on
+ * when a count is worth paying for).
+ */
+async function getDailyCloses(
+  symbol: string,
+  day: string,
+): Promise<{ tradingDay: string; close: number }[]> {
+  const rows = await readRows<{ trading_day: string; close: number }>(
+    `daily-closes:${symbol}`,
+    (signal) =>
+      db
+        .from("daily_closes")
+        .select("trading_day, close")
+        .eq("symbol", symbol)
+        .lte("trading_day", day)
+        .abortSignal(signal),
+  );
+  return rows.map((row) => ({ tradingDay: row.trading_day, close: Number(row.close) }));
+}
 
 /** One session's intraday price and volume series for a symbol, oldest first. */
 async function getIntraday(
@@ -592,58 +620,66 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
   // describing the same session rather than each picking its own.
   const sessionDay = (await getLatestSessionDay(symbol)) ?? tradingDay();
 
+  const peerSymbols = PEERS[symbol] ?? [];
+
   // One wave, not two: the timeline/events/summary queries only need `symbol`
   // and `sessionDay`, both already known, so they don't have to wait behind the
   // tickers/intraday/news queries above them.
-  const [tickers, intraday, news, timelineRows, eventRows, summary] = await Promise.all([
-    // This page draws its own chart from getIntraday and renders no sparkline.
-    // Uncached on purpose: the whole of getActivity is cached below, so going
-    // through the cached variant here would only add a second lookup for a
-    // result this one already covers.
-    getTickersUncached([symbol, SECTOR_SYMBOL, MARKET_SYMBOL], { sparklines: false }),
-    getIntraday(symbol, sessionDay),
-    getSymbolNews(symbol, sessionDay),
-    readRows<{ event_at: string; kind: string; label: string; detail: string | null }>(
-      `timeline:${symbol}`,
-      (signal) =>
-        db
-          .from("timeline_events")
-          .select("event_at, kind, label, detail")
-          .eq("symbol", symbol)
-          .eq("trading_day", sessionDay)
-          .order("event_at", { ascending: true })
-          .abortSignal(signal),
-    ),
-    // Bounded by the start of today's ET date, not by the current instant.
-    // Earnings rows carry a time only so the date and the call sort in order
-    // (noon and 21:00 UTC), so comparing against "now" hid today's earnings from
-    // the afternoon onwards — on the one day they matter most.
-    readRows<{ event_type: string; event_at: string; note: string | null }>(
-      `events:${symbol}`,
-      (signal) =>
-        db
-          .from("events")
-          .select("event_type, event_at, note")
-          .eq("symbol", symbol)
-          .gte("event_at", `${tradingDay()}T00:00:00Z`)
-          .order("event_at", { ascending: true })
-          .abortSignal(signal),
-    ),
-    // Absent is a normal answer here — a stock the post-close job has not
-    // reached yet has no row — so this is the one read whose empty result is
-    // meaningful rather than suspicious.
-    readMaybeOne<{ summary: string; bullets: string[] | null; generated_at: string }>(
-      `daily-summary:${symbol}`,
-      (signal) =>
-        db
-          .from("daily_summaries")
-          .select("summary, bullets, generated_at")
-          .eq("symbol", symbol)
-          .eq("summary_date", sessionDay)
-          .abortSignal(signal)
-          .maybeSingle(),
-    ),
-  ]);
+  const [tickers, intraday, news, timelineRows, eventRows, summary, dailyCloses] =
+    await Promise.all([
+      // This page draws its own chart from getIntraday and renders no sparkline.
+      // Uncached on purpose: the whole of getActivity is cached below, so going
+      // through the cached variant here would only add a second lookup for a
+      // result this one already covers. Peers ride the same query — their
+      // prices are already in price_cache, so this is a wider `IN (...)` on a
+      // table already being read, not a new upstream call.
+      getTickersUncached([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], {
+        sparklines: false,
+      }),
+      getIntraday(symbol, sessionDay),
+      getSymbolNews(symbol, sessionDay),
+      readRows<{ event_at: string; kind: string; label: string; detail: string | null }>(
+        `timeline:${symbol}`,
+        (signal) =>
+          db
+            .from("timeline_events")
+            .select("event_at, kind, label, detail")
+            .eq("symbol", symbol)
+            .eq("trading_day", sessionDay)
+            .order("event_at", { ascending: true })
+            .abortSignal(signal),
+      ),
+      // Bounded by the start of today's ET date, not by the current instant.
+      // Earnings rows carry a time only so the date and the call sort in order
+      // (noon and 21:00 UTC), so comparing against "now" hid today's earnings from
+      // the afternoon onwards — on the one day they matter most.
+      readRows<{ event_type: string; event_at: string; note: string | null }>(
+        `events:${symbol}`,
+        (signal) =>
+          db
+            .from("events")
+            .select("event_type, event_at, note")
+            .eq("symbol", symbol)
+            .gte("event_at", `${tradingDay()}T00:00:00Z`)
+            .order("event_at", { ascending: true })
+            .abortSignal(signal),
+      ),
+      // Absent is a normal answer here — a stock the post-close job has not
+      // reached yet has no row — so this is the one read whose empty result is
+      // meaningful rather than suspicious.
+      readMaybeOne<{ summary: string; bullets: string[] | null; generated_at: string }>(
+        `daily-summary:${symbol}`,
+        (signal) =>
+          db
+            .from("daily_summaries")
+            .select("summary, bullets, generated_at")
+            .eq("symbol", symbol)
+            .eq("summary_date", sessionDay)
+            .abortSignal(signal)
+            .maybeSingle(),
+      ),
+      getDailyCloses(symbol, sessionDay),
+    ]);
 
   const bySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   const ticker = bySymbol.get(symbol);
@@ -655,6 +691,13 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
   // a tracked symbol with no price_cache row yet, before the first refresh.
   if (!ticker) return null;
 
+  // A peer missing from price_cache (not yet refreshed) is simply absent here
+  // rather than treated as a zero move.
+  const peerChangePercents = peerSymbols.flatMap((peerSymbol) => {
+    const peerTicker = bySymbol.get(peerSymbol);
+    return peerTicker ? [peerTicker.changePercent] : [];
+  });
+
   return {
     sessionDay,
     ticker,
@@ -662,6 +705,8 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
     market: bySymbol.get(MARKET_SYMBOL) ?? null,
     intraday,
     news,
+    peers: { ...computePeerComparison(ticker.changePercent, peerChangePercents), symbols: peerSymbols },
+    periodPerformance: computePeriodPerformance(dailyCloses, sessionDay),
     timeline: timelineRows.map((row) => ({
       at: row.event_at,
       kind: row.kind as TimelineEntry["kind"],
