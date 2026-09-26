@@ -1,4 +1,5 @@
 import { formatPercent } from "@/lib/format";
+import { computeBreadth } from "@/lib/market-breadth";
 import type { Ticker } from "@/lib/queries";
 
 // The first thing on Home, and now the only thing above Market Overview.
@@ -26,10 +27,14 @@ import type { Ticker } from "@/lib/queries";
 // Rule, so the bar is not the only channel.
 
 export function SessionDigest({ tickers }: { tickers: Ticker[] }) {
-  const advancing = tickers.filter((t) => t.changePercent > 0).length;
-  const declining = tickers.filter((t) => t.changePercent < 0).length;
+  // The shared breadth computation (market-breadth.ts) — this is also what
+  // Market Story's breadth section will read (ticket 07), so the figure a
+  // visitor sees here and the one the narrative cites can never disagree.
+  const breadth = computeBreadth(tickers);
+  const advancing = breadth.advancers;
+  const declining = breadth.decliners;
   const moved = advancing + declining;
-  const significant = tickers.filter((t) => t.significant).length;
+  const significant = breadth.significantCount;
 
   const widest = tickers.reduce<Ticker | null>(
     (best, t) =>

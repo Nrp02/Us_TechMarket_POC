@@ -46,6 +46,11 @@ export const INDEX_CARDS: IndexCard[] = [
   // one card in a row of five wearing a different colour reads as a fault
   // rather than as a distinction. Do not re-propose it without new evidence.
   { label: "Volatility", symbol: "VIXY", note: "VIXY futures ETF" },
+  // The one sub-sector proxy this v1 ships — a semiconductor read distinct
+  // from (and complementary to) XLK's whole-Technology-sector figure. SOXX
+  // and SMH were both confirmed live against the current free Finnhub key
+  // during scoping; SOXX is the one carried into the spec.
+  { label: "Semiconductors", symbol: "SOXX", note: "SOXX sector ETF" },
 ];
 
 /**
