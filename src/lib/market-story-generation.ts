@@ -1,8 +1,9 @@
 import { generateJson, GroqRateLimitError } from "@/lib/groq";
 import { tradingDay } from "@/lib/market";
 import { buildMarketStoryInput, type MarketStoryInput } from "@/lib/market-story-input";
+import { getTickers } from "@/lib/queries";
 import { db } from "@/lib/supabase";
-import { INDEX_CARDS, TOP_20_SYMBOLS } from "@/lib/symbols";
+import { INDEX_CARDS, INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
 import { ANALYSIS_GUIDELINE } from "@/lib/story-guideline";
 
 // The end-of-day Market Story job — the whole-market counterpart to
@@ -204,33 +205,29 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
     .maybeSingle();
   if (existing) return { status: "already_done" };
 
-  const [{ data: priceRows }, { data: macroRows }, news] = await Promise.all([
-    db.from("price_cache").select("symbol, change_percent"),
+  // getTickers, not a raw price_cache query: it already computes
+  // `significant` correctly (relative volume vs. the shared threshold rule,
+  // significance.ts) for every symbol. A prior version of this function
+  // queried price_cache directly and hardcoded `significant: false` on every
+  // row, which made computeBreadth's significantCount always report 0
+  // regardless of the real figure — caught by comparing this section's
+  // claim against SessionDigest's, which reads real tickers and disagreed
+  // with it on the same page. Never reconstruct a Ticker by hand elsewhere;
+  // this is the one place that already does it right.
+  const [allTickers, { data: macroRows }, news] = await Promise.all([
+    getTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS]),
     db.from("macro_indicators").select("series_id, latest_date, latest_value, prior_date, prior_value"),
     loadMarketNews(resolvedDay),
   ]);
 
-  const bySymbol = new Map((priceRows ?? []).map((r) => [r.symbol as string, Number(r.change_percent)]));
+  const bySymbol = new Map(allTickers.map((t) => [t.symbol, t]));
   const top20 = TOP_20_SYMBOLS.flatMap((symbol) => {
-    const changePercent = bySymbol.get(symbol);
-    return changePercent == null
-      ? []
-      : [{ symbol, changePercent, significant: false }];
+    const ticker = bySymbol.get(symbol);
+    return ticker ? [{ symbol, changePercent: ticker.changePercent, significant: ticker.significant }] : [];
   });
-  // significant is recomputed properly where it matters (breadth's own
-  // significantCount) via the shared rule — see market-breadth.ts. The
-  // `false` above is a placeholder overwritten by computeBreadth's own read
-  // of relative volume where it has one; here breadth only needs price
-  // direction and the significance flag isn't read from this array's own
-  // field, since price_cache alone (no avg_volume join) can't derive it
-  // faithfully for this lightweight read. Acceptable: breadth's own count
-  // already comes from the Top 20's Ticker.significant elsewhere on the
-  // Market page (SessionDigest) — this generation job's own breadth section
-  // states the same advancers/decliners figures, not a second significance
-  // judgement.
   const indices = INDEX_CARDS.flatMap((card) => {
-    const changePercent = bySymbol.get(card.symbol);
-    return changePercent == null ? [] : [{ label: card.label, symbol: card.symbol, changePercent }];
+    const ticker = bySymbol.get(card.symbol);
+    return ticker ? [{ label: card.label, symbol: card.symbol, changePercent: ticker.changePercent }] : [];
   });
   const macro = (macroRows ?? []).map((r) => ({
     seriesId: r.series_id as string,
