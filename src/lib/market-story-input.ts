@@ -13,6 +13,7 @@
 import { isFomcDay, mostRecentDecision } from "./fomc-calendar.ts";
 import { FRED_SERIES } from "./fred.ts";
 import { TOP_20_SYMBOLS } from "./symbols.ts";
+import { computeRecentTrend, type RecentTrend } from "./trend-detection.ts";
 import {
   computeBreadth,
   computeSectorAverages,
@@ -72,6 +73,7 @@ export type MarketStoryIndex = {
   volatilityPercentile: number | null;
   rangePosition: number | null;
   rangeLabel: RangeLabel | null;
+  recentTrend: RecentTrend;
 };
 
 export type MarketStoryInput = {
@@ -110,6 +112,7 @@ export function buildMarketStoryInput(params: MarketStoryInputParams): MarketSto
       volatilityPercentile: computeVolatilityPercentile(index.changePercent, historicalChangePercents),
       rangePosition: rangePosition.position,
       rangeLabel: rangePosition.label,
+      recentTrend: computeRecentTrend(closes),
     };
   });
 

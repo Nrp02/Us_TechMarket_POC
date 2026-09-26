@@ -107,6 +107,25 @@ test("empty daily-close history leaves volatility fully null", () => {
   assert.equal(input.volatility.percentile, null);
   assert.equal(input.volatility.rangePosition, null);
   assert.equal(input.volatility.rangeLabel, null);
+  assert.deepEqual(input.recentTrend, {
+    direction: null, windowChangePercent: null, reversalDaysAgo: null, daysAvailable: 0,
+  });
+});
+
+test("Recent Trend includes today's close and leaves insufficient history unavailable", () => {
+  const days = ["10", "11", "12", "13", "14", "17", "18", "19", "20", "21"];
+  const dailyCloses = days.map((day, i) => ({
+    tradingDay: `2026-08-${day}`, close: 100 + i, changePercent: 1,
+  }));
+  const input = buildStoryInput({ ...base, dailyCloses });
+  assert.deepEqual(input.recentTrend, {
+    direction: "uptrend", windowChangePercent: 9, reversalDaysAgo: null, daysAvailable: 10,
+  });
+  const short = buildStoryInput({ ...base, dailyCloses: dailyCloses.slice(1) });
+  assert.equal(short.recentTrend.direction, null);
+  assert.equal(short.recentTrend.daysAvailable, 9);
+  assert.equal(short.volatility.percentile, 100);
+  assert.equal(short.volatility.rangeLabel, "near-high");
 });
 
 test("a symbol with no fundamentals row yet yields a null fundamentals section, not a guessed one", () => {

@@ -217,7 +217,7 @@ export function MarketStory({
       </section>
 
       <section>
-        <SectionHeading>Year-to-Date Context</SectionHeading>
+        <SectionHeading>Market Takeaway</SectionHeading>
         <SectionCard text={story.sections.closingSynthesis} chart={ytdChart} />
       </section>
     </>

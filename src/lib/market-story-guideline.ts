@@ -68,4 +68,16 @@ export const MARKET_ANALYSIS_GUIDELINE = `Analysis guideline — how to reason a
    figure into a sentence and call it analysis. Connect at least two pieces
    of the input (e.g. a sector average with its own standout member, breadth
    with the volatility proxy, a macro reading with sector leadership) before
-   it counts as reasoning rather than a re-worded number.`;
+   it counts as reasoning rather than a re-worded number.
+
+8. Place VIXY's move against its own Recent Trend in "volatilityContext"
+   only: connect today's proxy move to its supplied 10-trading-day
+   closing-price direction, net change, and confirmed reversal age. Explain
+   continuation, interruption, or no clear trend, never a forecast. Compare
+   today against the supplied direction, not the net change of the whole
+   window, which can have a different sign. Rule 6 forbids projecting today's
+   reading forward; this rule places it against
+   the past. VIXY tracks VIX futures, not spot VIX. A reversal needs two
+   later trading days to confirm; unavailable history or an unconfirmed
+   reversal must never become a guessed signal. The other proxies' trend
+   fields are reserved for future work, not other sections in this pass.`;

@@ -40,6 +40,9 @@ export type SectorAverage = {
 };
 
 /** Averages `changePercent` within each of SECTOR_BY_SYMBOL's buckets — a symbol outside the map is skipped, not fabricated a sector. */
+// Follow-up: a rolling multi-day sector-average trend needs a separate
+// cross-stock history aggregation and sufficient daily_closes history for
+// all 43 tracked stocks, including the 23 extended names. Not built here.
 export function computeSectorAverages(
   tickers: { symbol: string; changePercent: number }[],
 ): SectorAverage[] {

@@ -59,4 +59,15 @@ export const ANALYSIS_GUIDELINE = `Analysis guideline — how to reason, not jus
 7. Name the peer, not just the group: when peer data supports it, say which
    specific peer moved with or against this stock, using its own figure —
    not only the peer average. A single outlier inside an otherwise flat peer
-   group is a different, more specific observation than "peers were mixed."`;
+   group is a different, more specific observation than "peers were mixed."
+
+8. Place today against Recent Trend in "unusualness": when the supplied
+   10-trading-day closing-price trend is available, connect today's move to
+   that direction, net window change, and confirmed reversal age. Distinguish
+   continuation, a move against the trend, and no clear trend without
+   calculating new figures. Compare today to the supplied direction, not
+   the net window change: those can have opposite signs because direction
+   reads swing structure or the latest leg. Rule 5 forbids projecting today
+   forward; this rule places today against the past. Two later trading days are needed to
+   confirm a reversal, so never infer an unconfirmed one. Unavailable trend
+   history is a limitation to state, not a direction to guess.`;

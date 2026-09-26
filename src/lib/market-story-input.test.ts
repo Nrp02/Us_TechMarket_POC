@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { readAllRows } from "./db-read.ts";
 import { buildMarketStoryInput } from "./market-story-input.ts";
 
 const BASE_PARAMS = {
@@ -95,6 +96,60 @@ test("an index with no stored history yields null volatility/range rather than a
   assert.equal(qqq?.volatilityPercentile, null);
   assert.equal(qqq?.rangePosition, null);
   assert.equal(qqq?.rangeLabel, null);
+  assert.deepEqual(qqq?.recentTrend, {
+    direction: null, windowChangePercent: null, reversalDaysAgo: null, daysAvailable: 0,
+  });
+});
+
+test("Recent Trend keeps each proxy's history separate and includes today's close", () => {
+  const days = ["02", "03", "04", "07", "08", "09", "10", "11", "14", "15"];
+  const input = buildMarketStoryInput({
+    ...BASE_PARAMS,
+    day: "2026-09-15",
+    indices: [
+      { label: "NASDAQ 100", symbol: "QQQ", changePercent: 1, price: 109 },
+      { label: "Volatility", symbol: "VIXY", changePercent: -1, price: 91 },
+      { label: "Technology", symbol: "XLK", changePercent: 1, price: 109 },
+    ],
+    indexDailyCloses: days.flatMap((day, i) => [
+      { symbol: "QQQ", tradingDay: `2026-09-${day}`, close: 100 + i, changePercent: i === 9 ? 20 : 1 },
+      { symbol: "VIXY", tradingDay: `2026-09-${day}`, close: 100 - i, changePercent: -1 },
+      ...(i === 0 ? [] : [{ symbol: "XLK", tradingDay: `2026-09-${day}`, close: 100 + i, changePercent: 1 }]),
+    ]).reverse(),
+  });
+  assert.deepEqual(input.indices[0].recentTrend, {
+    direction: "uptrend", windowChangePercent: 9, reversalDaysAgo: null, daysAvailable: 10,
+  });
+  assert.deepEqual(input.indices[1].recentTrend, {
+    direction: "downtrend", windowChangePercent: -9, reversalDaysAgo: null, daysAvailable: 10,
+  });
+  assert.equal(input.indices[2].recentTrend.direction, null);
+  assert.equal(input.indices[2].recentTrend.daysAvailable, 9);
+  assert.equal(input.indices[0].volatilityPercentile, 100);
+});
+
+test("paginated ETF history supplies VIXY and XLK beyond the first 1000 rows", async () => {
+  const symbols = ["DIA", "QQQ", "SOXX", "SPY", "VIXY", "XLK"];
+  const history = symbols.flatMap((symbol) => Array.from({ length: 251 }, (_, i) => ({
+    symbol, tradingDay: new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10),
+    close: 100 + i, changePercent: 1,
+  })));
+  const inputParams = { ...BASE_PARAMS,
+    indices: symbols.map((symbol) => ({ label: symbol, symbol, price: 350, changePercent: 1 })),
+  };
+  const truncated = buildMarketStoryInput({ ...inputParams, indexDailyCloses: history.slice(0, 1000) });
+  assert.equal(truncated.indices.find((index) => index.symbol === "VIXY")?.recentTrend.direction, null);
+  const complete = await readAllRows("index-daily-closes", async (_signal, from, to) => ({
+    data: history.slice(from, to + 1), count: history.length, error: null,
+  }));
+  const input = buildMarketStoryInput({ ...inputParams, indexDailyCloses: complete });
+  for (const symbol of ["VIXY", "XLK"]) {
+    const proxy = input.indices.find((index) => index.symbol === symbol);
+    assert.equal(proxy?.recentTrend.direction, "uptrend");
+    assert.equal(proxy?.recentTrend.daysAvailable, 251);
+    assert.equal(proxy?.volatilityPercentile, 100);
+    assert.equal(proxy?.rangeLabel, "near-high");
+  }
 });
 
 test("an unrecognized macro series id passes through as its own label rather than crashing", () => {

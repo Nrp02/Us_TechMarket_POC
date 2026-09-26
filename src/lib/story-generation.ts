@@ -197,6 +197,20 @@ function buildPrompt(
           : `${Math.round(story.volatility.rangePosition * 100)}% of the way from the low to the high`,
       "range label": story.volatility.rangeLabel ?? "not available",
     },
+    "recent trend (trailing 10 trading days)": story.recentTrend.direction == null
+      ? "not available"
+      : {
+          direction: story.recentTrend.direction,
+          "today vs supplied direction (precomputed; not vs net window change)": story.recentTrend.direction === "no-clear-trend"
+            ? "no clear directional trend to compare against"
+            : story.price.changePercent === 0
+              ? "unchanged today"
+              : (story.price.changePercent > 0) === (story.recentTrend.direction === "uptrend")
+                ? "moves in the same direction as the recent trend"
+                : "moves against the recent trend",
+          "net change from window start to today": percentOrNull(story.recentTrend.windowChangePercent),
+          "trading days since the most recent confirmed reversal inside this window": story.recentTrend.reversalDaysAgo,
+        },
     "period performance": {
       "year-to-date": percentOrNull(story.periodPerformance.ytdPercent),
       "month-to-date": percentOrNull(story.periodPerformance.mtdPercent),
@@ -277,6 +291,26 @@ Return a JSON object with exactly these 8 keys:
    day describes today, not a forecast for tomorrow. If both percentile and
    range position are "not available", write exactly:
    "${NO_UNUSUALNESS}"
+   Otherwise, when "recent trend (trailing 10 trading days)" is available,
+   connect today's move to that backward-looking trend: does it continue,
+   move against, or sit within the recent direction? State the supplied net
+   window change, and state the confirmed reversal age when it is non-null.
+   Null reversal age means
+   no confirmed reversal age is available for this read, not zero days ago.
+   Null does not prove that no swings or reversals occurred in the window.
+   "no-clear-trend" means no directional trend was established; do not call
+   it an uptrend or downtrend based on the net window change alone.
+   The supplied direction reads confirmed swing structure (or the latest
+   leg); net window change covers the whole window and may have the opposite
+   sign. Compare today's move with DIRECTION: a gain against "downtrend" or
+   a decline against "uptrend" moves against that trend, even if the window's
+   net change shares today's sign. Use the precomputed "today vs supplied
+   direction" label as the authoritative comparison; never contradict it.
+   Never call a move against the trend a continuation. A reversal
+   needs two later trading days to confirm, so never assert a reversal today
+   or yesterday. If recent trend is "not available", say the recent-trend
+   read is unavailable and still reason from the available volatility data.
+   Keep this recent-trend reasoning in "unusualness" only, never a forecast.
 
 5. "explanation" — the fullest analytical read of why this stock moved today,
    drawing on any of the input: news, peers/sector/market divergence,
@@ -314,6 +348,15 @@ Length: keep "headline" to roughly 1-2 sentences. The 7 analytical sections
 actually needs, but never pad with restated numbers or a repeated conclusion.
 
 Further rules:
+- Recent Trend fields may be used ONLY in "unusualness", never in any other
+  section. In "unusualness", explicitly include the supplied direction,
+  net window percent change, confirmed reversal age if non-null (in trading
+  days), and precomputed today-vs-direction comparison. These are required,
+  not optional detail. Moving against a trend does not by itself make the
+  day's magnitude unusual; keep the volatility percentile read separate.
+  Do not summarize this as "usual/unusual in direction": state only the
+  supplied same-direction/against-trend/unclear comparison, without adding
+  a second directional verdict that could contradict it.
 - Every percent-change figure above already carries its own sign: a value
   with no minus sign is a GAIN, a value with a minus sign is a LOSS. Before
   writing any word like "up," "down," "gained," "fell," "slipped," "rose," or

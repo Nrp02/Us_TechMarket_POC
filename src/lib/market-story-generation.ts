@@ -3,10 +3,9 @@ import { generateJson, GroqRateLimitError } from "@/lib/groq";
 import { tradingDay } from "@/lib/market";
 import {
   buildMarketStoryInput,
-  type MarketStoryIndexClose,
   type MarketStoryInput,
 } from "@/lib/market-story-input";
-import { getDayTickers, getTickers } from "@/lib/queries";
+import { getDayTickers, getIndexDailyCloses, getTickers } from "@/lib/queries";
 import { db } from "@/lib/supabase";
 import { INDEX_CARDS, INDEX_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 import { MARKET_ANALYSIS_GUIDELINE } from "@/lib/market-story-guideline";
@@ -65,6 +64,20 @@ function buildPrompt(input: MarketStoryInput): string {
       "how unusual vs. its own past year (percentile of |daily moves|; higher = more unusual)":
         i.volatilityPercentile == null ? "not available" : `${i.volatilityPercentile.toFixed(0)}th percentile`,
       "position in its own trailing ~52-week range": i.rangeLabel ?? "not available",
+      "recent trend (trailing 10 trading days)": i.recentTrend.direction == null
+        ? "not available"
+        : {
+            direction: i.recentTrend.direction,
+            "today vs supplied direction (precomputed; not vs net window change)": i.recentTrend.direction === "no-clear-trend"
+              ? "no clear directional trend to compare against"
+              : i.changePercent === 0
+                ? "unchanged today"
+                : (i.changePercent > 0) === (i.recentTrend.direction === "uptrend")
+                  ? "moves in the same direction as the recent trend"
+                  : "moves against the recent trend",
+            "net change from window start to today": percentOrNull(i.recentTrend.windowChangePercent),
+            "trading days since the most recent confirmed reversal inside this window": i.recentTrend.reversalDaysAgo,
+          },
     })),
     "sector averages (mean percent change of the tracked stocks in each sector)": input.sectorAverages.map((s) => ({
       sector: s.sector,
@@ -151,6 +164,26 @@ Return a JSON object with exactly these 8 keys, each a string:
 7. "volatilityContext" — what the Volatility (VIXY) proxy's own move and its
    "how unusual vs. its own past year" figure, together with the day's
    breadth, say about how calm or turbulent the session was.
+   When VIXY's own "recent trend (trailing 10 trading days)" is available,
+   explain whether its move today continues, interrupts, or sits within its
+   own recent trend. State the supplied net window change, and state the
+   confirmed reversal age when it is non-null. This is VIXY's closing-price
+   trend (a VIX futures proxy), not spot VIX or a forecast. Null reversal age means no confirmed
+   reversal age is available for this read; it does not prove that no swings
+   or reversals occurred. Describe "no-clear-trend" as no clear directional
+   trend, not a neutral/flat price trend, even if net window change is signed.
+   Direction reads confirmed swing structure (or the latest leg), whereas
+   net change covers the whole window and may have the opposite sign. A
+   gain against "downtrend" or decline against "uptrend" interrupts that
+   direction; never call it continuation just because net change shares
+   today's sign.
+   Use VIXY's precomputed "today vs supplied direction" label as the
+   authoritative comparison; never contradict it.
+   Confirmation needs two later trading days,
+   so never assert a reversal today or yesterday. If its recent trend is
+   "not available", say that read is unavailable and use the other context.
+   Recent-trend reasoning belongs only in this section. Do not use any
+   proxy's recent-trend fields in the other sections.
 
 8. "closingSynthesis" — a closing "today's market story" that connects at
    least two of the above (e.g. breadth with sector leadership, or macro
@@ -161,6 +194,18 @@ have no sentence-count limit — write as much as the grounded reasoning
 actually needs, but never pad with restated numbers or a repeated conclusion.
 
 Further rules:
+- When VIXY's direction is "no-clear-trend", there is no directional trend
+  to move with or against. Never describe its move as against, continuing,
+  or interrupting that trend; explicitly say comparison is unavailable.
+- Recent Trend fields may be used ONLY in "volatilityContext", never in
+  "closingSynthesis" or any other section, and ONLY for VIXY. Explicitly
+  include VIXY's supplied direction, net window percent change, confirmed
+  reversal age if non-null (in trading days), and precomputed
+  today-vs-direction comparison. These are required, not optional detail.
+  This ban includes indirect summaries such as "absence of a clear
+  volatility trend" in "closingSynthesis". That section may connect
+  today's VIXY change or volatility percentile, but not its recent trend,
+  even when summarizing "volatilityContext".
 - Every percent-change figure above already carries its own sign: a value
   with no minus sign is a GAIN, a value with a minus sign is a LOSS.
   Describing a positive change as a decline (or vice versa) is treated the
@@ -175,7 +220,18 @@ Further rules:
 - Use only the input given. If it doesn't support a statement, don't make it.
 
 Input:
-${JSON.stringify(promptInput, null, 2)}`;
+${JSON.stringify(promptInput, null, 2)}
+
+Final JSON check before responding: in "volatilityContext", copy VIXY's
+supplied direction faithfully. A negative net window change does NOT mean
+downtrend. If direction is "no-clear-trend", explicitly say no directional
+trend was established and comparison is unavailable; do not call it a
+downtrend, uptrend, continuation, interruption, or move against a trend.
+Then inspect "closingSynthesis" and remove
+every reference to recent trends, including a lack of a clear trend. Do not
+use "trend", "directional", "reversal", or the ten-day window there.
+Recent Trend belongs ONLY in "volatilityContext". Synthesize today's
+breadth, sector moves, news/macro or today's VIXY change instead.`;
 }
 
 async function loadMarketNews(day: string) {
@@ -192,28 +248,6 @@ async function loadMarketNews(day: string) {
     summary: (row.news_summaries as unknown as { summary: string } | null)?.summary ?? null,
     sourceUrl: row.source_url as string,
     publishedAt: row.published_at as string,
-  }));
-}
-
-/**
- * Every index/sub-sector proxy's own daily_closes history in one query
- * (INDEX_SYMBOLS is 6 symbols), mirroring story-generation.ts's
- * loadDailyCloses but batched across symbols rather than one call per
- * symbol — this is a whole-market job, so it reads the whole set at once
- * the same way loadMarketNews and the macro read already do.
- */
-async function loadIndexDailyCloses(day: string): Promise<MarketStoryIndexClose[]> {
-  const { data, error } = await db
-    .from("daily_closes")
-    .select("symbol, trading_day, close, change_percent")
-    .in("symbol", INDEX_SYMBOLS)
-    .lte("trading_day", day);
-  if (error) throw new Error(`daily_closes read for indices: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    symbol: row.symbol as string,
-    tradingDay: row.trading_day as string,
-    close: Number(row.close),
-    changePercent: row.change_percent == null ? null : Number(row.change_percent),
   }));
 }
 
@@ -318,7 +352,9 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
         .abortSignal(signal),
     ),
     loadMarketNews(resolvedDay),
-    loadIndexDailyCloses(resolvedDay),
+    // Share the charts' paginated read: the old unbounded query silently
+    // stopped at 1000 rows and omitted XLK/VIXY despite stored history.
+    getIndexDailyCloses(resolvedDay),
   ]);
 
   const bySymbol = new Map(allTickers.map((t) => [t.symbol, t]));

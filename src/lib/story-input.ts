@@ -14,6 +14,7 @@ import { classifyMovement, type MovementClassification } from "./movement-classi
 import { computeDivergence, computePeerComparison, type Divergence, type PeerComparison } from "./peer-comparison.ts";
 import type { PeriodPerformance } from "./period-performance.ts";
 import { isSignificant, significanceScore } from "./significance.ts";
+import { computeRecentTrend, type RecentTrend } from "./trend-detection.ts";
 import { computeRangePosition, computeVolatilityPercentile, type RangeLabel } from "./volatility.ts";
 
 export type StoryDailyClose = {
@@ -93,6 +94,7 @@ export type StoryInput = {
     rangePosition: number | null;
     rangeLabel: RangeLabel | null;
   };
+  recentTrend: RecentTrend;
   periodPerformance: PeriodPerformance;
   fundamentals:
     | (StoryFundamentals & {
@@ -153,6 +155,7 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
       rangePosition: rangePosition.position,
       rangeLabel: rangePosition.label,
     },
+    recentTrend: computeRecentTrend(dailyCloses),
     periodPerformance,
     fundamentals: fundamentals && {
       ...fundamentals,

@@ -13,3 +13,11 @@ _Avoid_: Topic, type
 **Topic**:
 What an article is about, such as Earnings or Product. One per article, assigned by the AI from a fixed set, and the same for every visitor.
 _Avoid_: Category, news type, kind, tag
+
+### Analysis
+
+**Recent Trend**:
+The direction (uptrend/downtrend/no-clear-trend) and most recent confirmed
+reversal point of a symbol's closing price over the trailing 10 trading
+days — never a forecast of what happens next.
+_Avoid_: Short-Term Trend, momentum, signal
