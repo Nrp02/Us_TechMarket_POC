@@ -149,6 +149,11 @@ function buildPrompt(
     },
     "peer comparison": {
       "peer tickers": story.peers.symbols.length ? story.peers.symbols.join(", ") : "none configured",
+      // The average alone can't say *which* peer moved differently — this is
+      // what lets the model name a specific peer instead of only the group.
+      "each peer's own percent change today": story.peers.breakdown.length
+        ? story.peers.breakdown.map((p) => `${p.symbol} ${formatPercent(p.changePercent)}`).join(", ")
+        : "no peer prices available",
       "peer average percent change today": percentOrNull(story.peers.peerAveragePercent),
       "this stock's percent change MINUS the peer average (positive = outperformed peers)":
         percentOrNull(story.peers.vsPeersPercent),
@@ -298,6 +303,12 @@ Length: keep "headline" to roughly 1-2 sentences. The 7 analytical sections
 actually needs, but never pad with restated numbers or a repeated conclusion.
 
 Further rules:
+- Every percent-change figure above already carries its own sign: a value
+  with no minus sign is a GAIN, a value with a minus sign is a LOSS. Before
+  writing any word like "up," "down," "gained," "fell," "slipped," "rose," or
+  "declined," re-check it against that figure's actual sign. Describing a
+  positive change as a decline (or a negative one as a gain) is treated the
+  same as inventing a number — it is not allowed, however small the move.
 - A section must not restate a conclusion an earlier section already reached
   — each takes its own angle on the same underlying data.
 - Every claim must point to a specific figure or label present in the input
@@ -396,9 +407,11 @@ async function generateOneStory(
   if (!price) throw new Error(`${symbol}: no price_cache row`);
 
   const peerSymbols = PEERS[symbol] ?? [];
-  const peerChangePercents = peerSymbols.flatMap((peerSymbol) => {
+  // Paired with its own symbol, not just collected into a bare number list —
+  // a peer missing from price_cache is simply absent, same as before.
+  const peerBreakdown = peerSymbols.flatMap((peerSymbol) => {
     const peer = prices.get(peerSymbol);
-    return peer ? [Number(peer.change_percent)] : [];
+    return peer ? [{ symbol: peerSymbol, changePercent: Number(peer.change_percent) }] : [];
   });
   const sectorChangePercent = prices.get(SECTOR_SYMBOL)?.change_percent;
   const marketChangePercent = prices.get(MARKET_SYMBOL)?.change_percent;
@@ -425,7 +438,7 @@ async function generateOneStory(
     changePercent,
     relativeVolume: relVolume,
     peerSymbols,
-    peerChangePercents,
+    peerBreakdown,
     sectorChangePercent: sectorChangePercent == null ? null : Number(sectorChangePercent),
     marketChangePercent: marketChangePercent == null ? null : Number(marketChangePercent),
     dailyCloses,

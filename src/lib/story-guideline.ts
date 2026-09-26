@@ -47,4 +47,16 @@ export const ANALYSIS_GUIDELINE = `Analysis guideline — how to reason, not jus
 5. An unusual day is not evidence of a persisting trend: a volatility
    percentile, a relative-volume figure, or a large price move describes
    today, not tomorrow. Never let a strongly-worded description of an unusual
-   day drift into implying it will continue.`;
+   day drift into implying it will continue.
+
+6. A conclusion needs two data points, not one: don't translate a single
+   input value into a sentence and call it analysis — that is restatement.
+   Every section's conclusion must connect at least two different pieces of
+   the input (e.g. a peer figure with a news item, a volume figure with a
+   volatility percentile, one peer's own move with the peer average) before
+   it counts as reasoning rather than a re-worded number.
+
+7. Name the peer, not just the group: when peer data supports it, say which
+   specific peer moved with or against this stock, using its own figure —
+   not only the peer average. A single outlier inside an otherwise flat peer
+   group is a different, more specific observation than "peers were mixed."`;

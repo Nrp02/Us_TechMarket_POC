@@ -47,6 +47,12 @@ export type StoryNewsItem = {
   relatedSymbols: string[];
 };
 
+/** One peer's own move, paired with its symbol so the narrative can name it. */
+export type StoryPeerMove = {
+  symbol: string;
+  changePercent: number;
+};
+
 export type StoryInputParams = {
   symbol: string;
   sessionDay: string;
@@ -54,8 +60,12 @@ export type StoryInputParams = {
   changePercent: number;
   relativeVolume: number | null;
   peerSymbols: string[];
-  /** Already filtered to peers with a known price — see computePeerComparison. */
-  peerChangePercents: number[];
+  /**
+   * Already filtered to peers with a known price, each paired with its own
+   * symbol — the average alone (the only thing this used to carry) can't
+   * say *which* peer moved differently, only that the group did.
+   */
+  peerBreakdown: StoryPeerMove[];
   /** Null before this session's sector/market proxy has been fetched. */
   sectorChangePercent: number | null;
   marketChangePercent: number | null;
@@ -75,7 +85,7 @@ export type StoryInput = {
   sessionDay: string;
   price: { price: number; changePercent: number; relativeVolume: number | null };
   significance: { score: number; significant: boolean };
-  peers: PeerComparison & { symbols: string[] };
+  peers: PeerComparison & { symbols: string[]; breakdown: StoryPeerMove[] };
   divergence: Divergence;
   movementClassification: MovementClassification;
   volatility: {
@@ -103,7 +113,7 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
     changePercent,
     relativeVolume,
     peerSymbols,
-    peerChangePercents,
+    peerBreakdown,
     sectorChangePercent,
     marketChangePercent,
     dailyCloses,
@@ -121,6 +131,7 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
     .filter((row) => row.tradingDay !== sessionDay && row.changePercent !== null)
     .map((row) => row.changePercent as number);
   const rangePosition = computeRangePosition(price, dailyCloses.map((row) => row.close));
+  const peerChangePercents = peerBreakdown.map((p) => p.changePercent);
 
   return {
     symbol,
@@ -130,7 +141,11 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
       score: significanceScore(changePercent, relativeVolume),
       significant: isSignificant(changePercent, relativeVolume),
     },
-    peers: { ...computePeerComparison(changePercent, peerChangePercents), symbols: peerSymbols },
+    peers: {
+      ...computePeerComparison(changePercent, peerChangePercents),
+      symbols: peerSymbols,
+      breakdown: peerBreakdown,
+    },
     divergence,
     movementClassification: classifyMovement(divergence.vsMarketPercent),
     volatility: {

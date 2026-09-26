@@ -10,7 +10,11 @@ const base: StoryInputParams = {
   changePercent: 3.5,
   relativeVolume: 1.8,
   peerSymbols: ["AMD", "AVGO", "QCOM"],
-  peerChangePercents: [1.2, -0.5, 2.1],
+  peerBreakdown: [
+    { symbol: "AMD", changePercent: 1.2 },
+    { symbol: "AVGO", changePercent: -0.5 },
+    { symbol: "QCOM", changePercent: 2.1 },
+  ],
   sectorChangePercent: 1.0,
   marketChangePercent: 0.4,
   dailyCloses: [
@@ -53,6 +57,11 @@ test("a realistic scenario assembles every field, computed rather than passed th
   assert.equal(input.peers.symbols.length, 3);
   assert.equal(input.peers.peerAveragePercent, (1.2 - 0.5 + 2.1) / 3);
   assert.equal(input.peers.vsPeersPercent, 3.5 - (1.2 - 0.5 + 2.1) / 3);
+  assert.deepEqual(input.peers.breakdown, [
+    { symbol: "AMD", changePercent: 1.2 },
+    { symbol: "AVGO", changePercent: -0.5 },
+    { symbol: "QCOM", changePercent: 2.1 },
+  ]);
 
   assert.equal(input.divergence.vsSectorPercent, 2.5);
   assert.equal(input.divergence.vsMarketPercent, 3.1);
@@ -88,7 +97,7 @@ test("a same-day 8-K filing passes through unchanged", () => {
 });
 
 test("missing peer data flows through as null, not a fabricated average", () => {
-  const input = buildStoryInput({ ...base, peerChangePercents: [] });
+  const input = buildStoryInput({ ...base, peerBreakdown: [] });
   assert.equal(input.peers.peerAveragePercent, null);
   assert.equal(input.peers.vsPeersPercent, null);
 });
@@ -116,7 +125,10 @@ test("a flat (zero) baseline day still assembles a valid, non-crashing payload",
   const input = buildStoryInput({
     ...base,
     changePercent: 0,
-    peerChangePercents: [0, 0],
+    peerBreakdown: [
+      { symbol: "AMD", changePercent: 0 },
+      { symbol: "AVGO", changePercent: 0 },
+    ],
     sectorChangePercent: 0,
     marketChangePercent: -2,
   });
