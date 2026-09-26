@@ -1,5 +1,6 @@
 import { hasReliableClose, reconcileClose } from "@/lib/closing-price";
 import { fetchLatestEarnings, fetchMetrics, fetchQuote } from "@/lib/finnhub";
+import { FRED_SERIES, fetchLatestTwo } from "@/lib/fred";
 import { tradingDay } from "@/lib/market";
 import { fetchFilings } from "@/lib/sec-edgar";
 import { db } from "@/lib/supabase";
@@ -71,6 +72,58 @@ const FUNDAMENTALS_STALE_DAYS = 7;
 /** Matches sec_filings' own retention window (migration 0013) — no point fetching what the next prune pass would discard. */
 const SEC_FILINGS_RETENTION_DAYS = 370;
 
+/** FRED's macro series update monthly at most; same "check first, fetch only if needed" shape as fundamentals above. */
+const MACRO_STALE_DAYS = 7;
+
+/**
+ * One row per FRED series (CPI, unemployment, GDP, fed funds rate), refreshed
+ * only when missing or stale. Market-wide, not per-symbol, so this runs once
+ * per refresh cycle rather than inside the per-symbol loop below. Its own
+ * try/catch at the call site: a FRED outage must not fail the whole
+ * ingestion job over a low-frequency secondary fetch.
+ */
+async function refreshMacroIndicators(): Promise<void> {
+  const { data: cached } = await db.from("macro_indicators").select("series_id, updated_at");
+  const staleCutoff = Date.now() - MACRO_STALE_DAYS * 24 * 60 * 60 * 1000;
+  const fresh = new Set(
+    (cached ?? [])
+      .filter((r) => new Date(r.updated_at as string).getTime() >= staleCutoff)
+      .map((r) => r.series_id as string),
+  );
+
+  const rows: {
+    series_id: string;
+    latest_date: string;
+    latest_value: number | null;
+    prior_date: string | null;
+    prior_value: number | null;
+    updated_at: string;
+  }[] = [];
+
+  for (const seriesId of Object.values(FRED_SERIES)) {
+    if (fresh.has(seriesId)) continue;
+    try {
+      const [latest, prior] = await fetchLatestTwo(seriesId);
+      if (!latest) continue;
+      rows.push({
+        series_id: seriesId,
+        latest_date: latest.date,
+        latest_value: latest.value,
+        prior_date: prior?.date ?? null,
+        prior_value: prior?.value ?? null,
+        updated_at: new Date().toISOString(),
+      });
+    } catch {
+      // Left missing/stale; the next run's staleness check retries it.
+    }
+  }
+
+  if (rows.length) {
+    const { error } = await db.from("macro_indicators").upsert(rows, { onConflict: "series_id" });
+    if (error) throw new Error(`macro_indicators upsert: ${error.message}`);
+  }
+}
+
 export async function refreshMarketData(): Promise<RefreshResult> {
   // Average volume moves slowly, so it is only re-fetched when missing. That
   // keeps a warm run at one Finnhub call per symbol.
@@ -129,6 +182,13 @@ export async function refreshMarketData(): Promise<RefreshResult> {
     item_codes: string;
     fetched_at: string;
   }[] = [];
+
+  try {
+    await refreshMacroIndicators();
+  } catch {
+    // A FRED outage must not fail the whole ingestion job — the next run's
+    // staleness check retries it.
+  }
 
   await mapLimit(ALL_SYMBOLS, CONCURRENCY, async (symbol) => {
     try {

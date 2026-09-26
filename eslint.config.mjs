@@ -40,6 +40,7 @@ const eslintConfig = defineConfig([
                 "@/lib/finnhub-events",
                 "@/lib/yahoo",
                 "@/lib/gemini",
+                "@/lib/fred",
                 "@/lib/refresh",
                 "@/lib/news-ingest",
                 "@/lib/daily-summary",
