@@ -29,8 +29,9 @@ function MarketIcon({ active }: IconProps) {
   );
 }
 
-// A simple table — a header row over two body rows — for the page that is,
-// unadorned, the full Top-20 table.
+// A simple table — a header row over two body rows — kept as the Stocks
+// nav item's mark even though the item now routes straight to Today's
+// Activity (a single stock's page) rather than a Top-20 table page.
 function StocksIcon({ active }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 1.75 : 1.5} strokeLinecap="round" strokeLinejoin="round" className="size-[18px]" aria-hidden>
@@ -55,7 +56,11 @@ function NewsIcon({ active }: IconProps) {
 
 const NAV_ITEMS = [
   { href: "/", label: "Market", icon: MarketIcon },
-  { href: "/stocks", label: "Stocks", icon: StocksIcon },
+  // "Stocks" routes to Today's Activity, not a separate table page — the
+  // owner's call after seeing the Top-20-table build: clicking Stocks
+  // should land on a stock's own page (NVDA by default), same as the old
+  // Today's Activity nav item did before the Market Story pivot.
+  { href: "/todays-activity", label: "Stocks", icon: StocksIcon },
   { href: "/news", label: "News", icon: NewsIcon },
 ] as const;
 

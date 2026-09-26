@@ -18,7 +18,7 @@ import { useEffect } from "react";
 // permanently on screen.
 export const SHORTCUTS: { key: string; href: string; label: string }[] = [
   { key: "m", href: "/", label: "Market" },
-  { key: "s", href: "/stocks", label: "Stocks" },
+  { key: "s", href: "/todays-activity", label: "Stocks" },
   { key: "n", href: "/news", label: "News" },
 ];
 

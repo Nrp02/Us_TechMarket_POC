@@ -32,10 +32,10 @@ export default function NotFound() {
           Go to Market
         </Link>
         <Link
-          href="/stocks"
+          href="/todays-activity"
           className="panel-control px-4 py-2 text-sm font-semibold text-ink"
         >
-          Browse the Stocks list
+          Browse Stocks
         </Link>
       </div>
     </div>

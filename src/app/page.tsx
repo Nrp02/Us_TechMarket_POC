@@ -17,7 +17,8 @@ import {
 import { INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // The Market page — whole-market overview, replacing the old personalized
-// Home. The full Top-20 table and Top Movers moved to /stocks (ticket 03);
+// Home. There is no separate full-table page: the "Stocks" nav item routes
+// straight to Today's Activity (a single stock's page, NVDA by default) —
 // this page stays scoped to "what happened to the market today," market-wide.
 //
 // Reads cached tables only, never an upstream API.
