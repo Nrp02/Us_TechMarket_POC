@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { isMarketOpen } from "@/lib/market";
+import { generateMarketStory } from "@/lib/market-story-generation";
 import { generateStories } from "@/lib/story-generation";
 
 // End-of-day Today's Story generation, on the same schedule window as
 // /api/daily-summary (see scripts/setup-cron.mts) but a second, independent
 // cron entry — each tick here does at most 2 Groq calls (STOCKS_PER_RUN),
 // against the Gemini job's up-to-5-stock batch.
+//
+// Market Story's one-call-a-day generation rides this same tick rather than
+// getting its own cron entry, per the spec's explicit "no new cron entry for
+// one call" — generateMarketStory is idempotent (checks for an existing row
+// first), so calling it on every tick costs nothing once the day is done.
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
@@ -35,7 +41,18 @@ export async function POST(request: Request) {
   const day = params.get("day") ?? undefined;
 
   try {
-    return NextResponse.json(await generateStories(day));
+    const stories = await generateStories(day);
+
+    // Its own try/catch: a Market Story failure must not mark the per-stock
+    // job's own result as failed too — the two are independent Groq calls.
+    let marketStory: unknown;
+    try {
+      marketStory = await generateMarketStory(day);
+    } catch (error) {
+      marketStory = { status: "failed", message: error instanceof Error ? error.message : "failed" };
+    }
+
+    return NextResponse.json({ ...stories, marketStory });
   } catch (error) {
     const message = error instanceof Error ? error.message : "story job failed";
     return NextResponse.json({ error: message }, { status: 502 });

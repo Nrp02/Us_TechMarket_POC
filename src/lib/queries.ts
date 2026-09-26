@@ -740,6 +740,44 @@ export const getActivityDates = unstable_cache(
 );
 
 /**
+ * The 8-section Market Story narrative, read back from the `market_stories`
+ * table. Mirrors `market-story-generation.ts`'s `MarketStorySections`, same
+ * "declared independently rather than imported" reasoning `StorySections`
+ * above already follows — that file is an upstream/AI job, blocked from
+ * page/component imports by `no-restricted-imports`.
+ */
+export type MarketStorySections = {
+  overallRead: string;
+  standoutMovers: string;
+  sectorLeadership: string;
+  breadth: string;
+  marketEvents: string;
+  macroContext: string;
+  volatilityContext: string;
+  closingSynthesis: string;
+};
+
+export type MarketStory = { sections: MarketStorySections; generatedAt: string };
+
+async function getMarketStoryUncached(day: string): Promise<MarketStory | null> {
+  const row = await readMaybeOne<{ sections: MarketStorySections; generated_at: string }>(
+    `market-story:${day}`,
+    (signal) =>
+      db
+        .from("market_stories")
+        .select("sections, generated_at")
+        .eq("story_date", day)
+        .abortSignal(signal)
+        .maybeSingle(),
+  );
+  return row ? { sections: row.sections, generatedAt: row.generated_at as string } : null;
+}
+
+export const getMarketStory = unstable_cache(getMarketStoryUncached, ["market-story"], {
+  revalidate: CACHE_SECONDS,
+});
+
+/**
  * Everything the Today's Activity page renders for one stock. Every field is a
  * cached table read — the page makes no upstream call and triggers no AI call;
  * the narrative was written once by the end-of-day job.

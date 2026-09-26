@@ -46,6 +46,7 @@ const eslintConfig = defineConfig([
                 "@/lib/daily-summary",
                 "@/lib/groq",
                 "@/lib/story-generation",
+                "@/lib/market-story-generation",
               ],
               message:
                 "Upstream API clients must not be reached from a page or component. Pages read cached data via @/lib/queries; upstream calls belong in a scheduled ingestion job (see CLAUDE.md, 'Ingestion architecture').",

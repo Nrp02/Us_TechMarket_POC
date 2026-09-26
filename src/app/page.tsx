@@ -1,11 +1,19 @@
 import { DatePicker } from "@/components/date-picker";
 import { MarketOverview } from "@/components/market-overview";
+import { MarketStory } from "@/components/market-story";
 import { NewsTeaser } from "@/components/news-teaser";
 import { SessionDigest } from "@/components/session-digest";
 import { activityDateLabel, buildActivityDateOptions, resolveActivityDay } from "@/lib/activity-date";
 import { formatDayLong } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
-import { getActivityDates, getDayTickers, getNewsTeaser, getSessionStamp, getTickers } from "@/lib/queries";
+import {
+  getActivityDates,
+  getDayTickers,
+  getMarketStory,
+  getNewsTeaser,
+  getSessionStamp,
+  getTickers,
+} from "@/lib/queries";
 import { INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // The Market page — whole-market overview, replacing the old personalized
@@ -40,10 +48,11 @@ export default async function Market({
   // News is not date-scoped here — the teaser's own job is "most recent 3,
   // whatever day" regardless of which session the figures above it show (same
   // reasoning getNewsTeaser's doc comment already states).
-  const [all, news, session] = await Promise.all([
+  const [all, news, session, marketStory] = await Promise.all([
     day ? getDayTickers(allSymbols, day) : getTickers(allSymbols),
     getNewsTeaser(3),
     getSessionStamp(),
+    getMarketStory(currentDay),
   ]);
   const bySymbol = new Map(all.map((t) => [t.symbol, t]));
   const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
@@ -68,6 +77,8 @@ export default async function Market({
       <SessionDigest tickers={top20} />
 
       <MarketOverview tickers={indices} />
+
+      <MarketStory story={marketStory} />
 
       {/* Market News runs full width, its three articles in a row rather than
           a column. */}
