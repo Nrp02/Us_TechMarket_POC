@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ActivityStats } from "@/components/activity-stats";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { CompanyLogo } from "@/components/company-logo";
+import { DailySummaryCard } from "@/components/daily-summary-card";
 import { DatePicker } from "@/components/date-picker";
 import { IntradayChart } from "@/components/intraday-chart";
 import { SectionHeading } from "@/components/section-heading";
@@ -228,6 +229,8 @@ export default async function TodaysActivityForSymbol({
       )}
 
       <ActivityStats activity={activity} />
+
+      <DailySummaryCard summary={activity.dailySummary} symbol={ticker.symbol} />
 
       {/* The chart takes the events panel as its sidebar, and the timeline runs
           the full width beneath them both.

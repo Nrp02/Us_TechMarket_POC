@@ -500,7 +500,7 @@ export type UpcomingEvent = {
  * declared independently rather than imported from there — that file is an
  * upstream/AI job (blocked from page/component imports by `no-restricted-imports`
  * in eslint.config.mjs), and this read-side type is this file's own, same as
- * the retired `DailySummary` type was never imported from `daily-summary.ts`.
+ * `DailySummary` below is never imported from `daily-summary.ts`.
  */
 export type StorySections = {
   headline: {
@@ -521,6 +521,20 @@ export type Story = {
   generatedAt: string;
 };
 
+/**
+ * The retired-then-restored AI Daily Summary. Mirrors what `daily-summary.ts`
+ * writes to `daily_summaries` (`movement`/`recap`/`explanation` joined into
+ * one `summary` string at write time, plus `bullets`) — declared
+ * independently rather than imported from there for the same reason
+ * `StorySections` is: that file is an upstream/AI job, blocked from
+ * page/component imports by `no-restricted-imports`.
+ */
+export type DailySummary = {
+  narrative: string;
+  bullets: string[];
+  generatedAt: string;
+};
+
 export type Activity = {
   /**
    * The session everything on the page describes, as a New York date. Outside
@@ -538,6 +552,14 @@ export type Activity = {
   events: UpcomingEvent[];
   /** The Today's Story narrative, written once by the Groq end-of-day job. */
   story: Story | null;
+  /**
+   * The AI Daily Summary — a separate card from Today's Story, restored at
+   * the owner's request (see CLAUDE.md). Written once per stock by the
+   * Gemini end-of-day job (`daily-summary.ts`), which never stopped running
+   * after Today's Story shipped — only the reader was removed. This wires a
+   * reader back onto its output; the two cards render side by side.
+   */
+  dailySummary: DailySummary | null;
   /** This stock's change% against the average of its PEERS tickers. */
   peers: PeerComparison & { symbols: string[] };
   periodPerformance: PeriodPerformance;
@@ -800,7 +822,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
   // One wave, not two: the timeline/events/summary queries only need `symbol`
   // and `sessionDay`, both already known, so they don't have to wait behind the
   // tickers/intraday/news queries above them.
-  const [tickers, intraday, news, timelineRows, eventRows, storyRow, dailyCloses] =
+  const [tickers, intraday, news, timelineRows, eventRows, storyRow, summaryRow, dailyCloses] =
     await Promise.all([
       // This page draws its own chart from getIntraday and renders no sparkline.
       // Uncached on purpose: the whole of getActivity is cached below, so going
@@ -860,6 +882,19 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
             .abortSignal(signal)
             .maybeSingle(),
       ),
+      // Absent is a normal answer here too — the same "job hasn't reached it
+      // yet" case the story read above documents.
+      readMaybeOne<{ summary: string; bullets: string[] | null; generated_at: string }>(
+        `daily-summary:${symbol}`,
+        (signal) =>
+          db
+            .from("daily_summaries")
+            .select("summary, bullets, generated_at")
+            .eq("symbol", symbol)
+            .eq("summary_date", sessionDay)
+            .abortSignal(signal)
+            .maybeSingle(),
+      ),
       getDailyCloses(symbol, sessionDay),
     ]);
 
@@ -903,6 +938,13 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
     })),
     story: storyRow
       ? { sections: storyRow.sections, generatedAt: storyRow.generated_at as string }
+      : null,
+    dailySummary: summaryRow
+      ? {
+          narrative: summaryRow.summary,
+          bullets: summaryRow.bullets ?? [],
+          generatedAt: summaryRow.generated_at as string,
+        }
       : null,
   };
 }
