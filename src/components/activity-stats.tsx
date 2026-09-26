@@ -75,9 +75,22 @@ export function ActivityStats({ activity }: { activity: Activity }) {
           Re-derived rather than copy-pasted: 2 columns below 600 (4 rows,
           orphaning 1), 3 from 600 (3 rows, orphaning 2), 4 from xl (2 rows,
           orphaning 1) — no spanning, matching the settled Home pattern.
-          Verify at 390 / 600 / 1024 / 1280 before treating this as final, the
-          same iframe method CLAUDE.md's responsive section already uses; this
-          pass derived the math but did not re-measure it live. */}
+          Measured live (fixed-position same-origin iframe, not the
+          `flex justify-center` body's own layout flow — a plain child
+          iframe there shrinks to fit like any other flex item and under-
+          reports its width) at every CLAUDE.md breakpoint: 390 / 430 / 600 /
+          768 / 834 / 1024 / 1130 / 1280 / 1470 / 1920. `scrollWidth` equalled
+          the viewport at all ten — no spanning bug, no overflow.
+
+          One real defect this surfaced: the Peers cell's `value` used to be
+          `"${percent} vs peers"`, set at the same text-figure size as every
+          other cell's bare number. At three and four columns (834–1280) that
+          phrase wrapped to two lines — "vs" then "peers" alone on the second
+          — and the card grew taller than its row siblings, which is exactly
+          the row-height break the orphan/no-span rule above exists to avoid.
+          The number moved back to being the whole value; "vs peers" moved
+          into `detail`, matching how Sector/Market already state what a
+          percentage is measured against. */}
       <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-4">
         <Cell
           label="Price Movement"
@@ -117,14 +130,14 @@ export function ActivityStats({ activity }: { activity: Activity }) {
           value={
             peers.vsPeersPercent == null
               ? "—"
-              : `${formatPercent(peers.vsPeersPercent)} vs peers`
+              : formatPercent(peers.vsPeersPercent)
           }
           detail={
             peers.symbols.length === 0
               ? "No peer data"
               : peers.peerAveragePercent == null
-                ? `Peers: ${peers.symbols.join(", ")} (prices unavailable)`
-                : `${peers.symbols.join(", ")} averaging ${formatPercent(peers.peerAveragePercent)}`
+                ? `vs ${peers.symbols.join(", ")} (prices unavailable)`
+                : `vs ${peers.symbols.join(", ")}, averaging ${formatPercent(peers.peerAveragePercent)}`
           }
           tone={tone(peers.vsPeersPercent)}
         />

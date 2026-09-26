@@ -195,8 +195,6 @@ export default async function TodaysActivityForSymbol({
 
       <ActivityStats activity={activity} />
 
-      <TodaysStory activity={activity} />
-
       {/* The chart takes the events panel as its sidebar, and the timeline runs
           the full width beneath them both.
 
@@ -237,6 +235,8 @@ export default async function TodaysActivityForSymbol({
           nothing. A grid instead of columns reverses the reading order — in
           row-major flow the sequence goes across while the rail goes down. */}
       <ActivityTimeline entries={activity.timeline} />
+
+      <TodaysStory activity={activity} />
     </div>
   );
 }

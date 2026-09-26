@@ -52,7 +52,7 @@ export function ActivityTimeline({ entries }: { entries: TimelineEntry[] }) {
       <SectionHeading
         meta={entries.length ? `${entries.length} events` : undefined}
       >
-        Today&apos;s Timeline
+        Timeline
       </SectionHeading>
 
       {entries.length ? (
