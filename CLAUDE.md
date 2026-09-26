@@ -14,6 +14,41 @@ Single-context: `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
 
 ## What you are building
 
+### Current scope (2026-09-26) — supersedes historic scope/budget notes
+
+- News and market breadth/movers/sector averages: 43 `TRACKED_STOCK_SYMBOLS`.
+  Refresh: 43 stocks plus six ETF proxies. Deep single-stock analysis,
+  fundamentals, SEC and peers: Top 20 only. `ALL_SYMBOLS` stays Top 20 plus ETFs.
+- News filters: All plus six sectors. Extended stocks have names and relevance
+  aliases; ambiguous tickers AI/F/ON/TEAM are not ordinary-word matches.
+  Extended logos may use the existing ticker fallback.
+- News blurbs: free OpenRouter, pinned `dots-studio/dots-3-note-preview:free`.
+  The owner approved non-Qwen free models, prioritising volume. Dots passed
+  50 fictional mixed-topic articles through the production client in 20.6s.
+  Reasoning is disabled; strict JSON schema plus complete-batch validation.
+  No paid/model fallback or immediate retry. Provider shared capacity can
+  still return 429 independently of the account quota.
+  On 2026-09-26, `/api/v1/key` reported 50 free requests/day for this account;
+  the documented limit is 20 requests/minute. Daily quota is account-wide,
+  not multiplied by changing models. Only 12 scheduled requests/day proposed.
+  Gemini is reserved for AI Daily Summary (four successful batches/day,
+  up to 12 existing scheduled attempts). Groq continues both Story jobs.
+- Proposed news cron: `7 0,2,4,6,8,10,12,14,16,18,20,21 * * *` UTC,
+  12 cycles/day, offset from refresh
+  and EOD jobs. The 21:07 cycle is after the close under EST/EDT and before
+  Daily Summary starts at 22:05. One AI attempt/cycle, maximum 50 articles:
+  theoretical ceiling 600 blurbs/day, not guaranteed throughput or coverage.
+  Live cron is unchanged.
+  Concurrency five bounds workers, not requests/minute. Warm refresh uses 49
+  quotes; cold fundamentals can still hit the minute quota and defer work.
+- Store fetched articles before AI. Validate a complete batch before persisting
+  blurbs. Pending blurbs are best-effort while articles remain in the fetched
+  window; this is not a durable DB-backed queue. Report `aiCalls` and failures.
+- Significance count is Top-20-only, labelled in UI and Market Story prompt.
+  Snapshot and day-news reads paginate beyond the 1,000-row PostgREST ceiling.
+- Preparation only: provider smoke tests and pure/local verification, no live
+  ingestion, cron provisioning or deployment. Local jobs share production DB.
+
 A school demo — an AI daily intelligence app for tracking US Technology stocks. Core question the product answers, per stock, once a day: **"What happened to this stock today?"**
 
 Workflow: Watch → Collect → Filter → Understand → Summarize.
@@ -591,7 +626,7 @@ These look like they contradict earlier reasoning in this doc. They're not mista
 
 - **Market Story gained charts on 4 of its 7 sections**, closing the gap the Stocks page's Today's Story already had (3 of 8 sections chart, `todays-story.tsx`). Same test applied both places: a section earns a chart only when its content is one comparable numeric scale, not wherever a number exists.
 
-  **Standout Movers and Sector Leadership** get a new `RankedBars` chart (`story-charts.tsx`) — a variable-length sibling of `ComparisonBars` for a named list of symbols/sectors rather than 4 fixed rows, same zero-centred diverging track when the rows straddle zero. **Volatility & Context** reuses `RangeBar` for VIXY's own trailing-range position (min/max/current, same shape `RangeBar` already draws for a single stock). **Today's Market Story** (the closing section) reuses `YtdChart` for SPY's year-to-date line, the market-wide counterpart to a stock's own YTD chart. Both single-instrument charts are wrapped in a new small `LabeledChart` (naming "Volatility (VIXY)" / "S&P 500 (SPY)"), since — unlike the movers/sector rows, which carry their own labels — a lone RangeBar/YtdChart draws no label of its own.
+  **Standout Movers and Sector Leadership** get a new `RankedBars` chart (`story-charts.tsx`) — a variable-length sibling of `ComparisonBars` for a named list of symbols/sectors rather than 4 fixed rows, same zero-centred diverging track when the rows straddle zero. **Volatility & Context** reuses `RangeBar` for VIXY's own trailing-range position (min/max/current, same shape `RangeBar` already draws for a single stock). **Year-to-Date Context** (the closing section, renamed from "Today's Market Story" — see the widen-to-43 migration) reuses `YtdChart` for XLK's year-to-date line, the market-wide counterpart to a stock's own YTD chart — switched from SPY to XLK since this page is about the tracked tech universe specifically. Both single-instrument charts are wrapped in a new small `LabeledChart` (naming "Volatility (VIXY)" / "Technology (XLK)"), since — unlike the movers/sector rows, which carry their own labels — a lone RangeBar/YtdChart draws no label of its own.
 
   **Breadth stays text-only, on purpose.** `computeBreadth` is exactly as chart-ready as `computeSectorAverages`/`computeTopMovers`, but `SessionDigest` already draws the advance/decline bar from the same 20 tickers a few hundred pixels above this section — a second identical bar here would read as a repeat, not a second view. Market-Relevant News and Macro Context stay text-only for the same reason "Why It Moved" and "Business & Fundamentals" do on the Stocks page: a news list isn't a chart, and CPI/unemployment/GDP/Fed-funds don't share an axis, so one bar chart across them would draw a false equivalence between four different units.
 
@@ -643,7 +678,7 @@ The three below were forced by what the free tiers actually do, discovered by pr
 
   - **`theme/dark` is the dark-inked variant, and it is the one to use.** The naming reads backwards: `theme/light` returns the white knock-out mark where it exists at all, which is invisible on the light plate the components draw. Verified in a browser — guessing here makes every logo disappear.
   - **These URLs cannot be verified with curl.** Brandfetch blocks script and server-side fetches of CDN links that carry only the public client id, returning an identical 383KB HTML page with status 200 for every domain, present or not. A shell check therefore "passes" for marks that do not exist. Check in a real browser.
-  - **Prefer `symbol`, fall back to `logo`.** Twelve brands have a square standalone `symbol`; the other eight have only the wordmark lockup. `icon` is deliberately unused — it is an opaque JPEG tile for 13 of 21 brands and would sit inconsistently beside the transparent vectors.
+  - **Prefer `symbol`, fall back to `logo`.** Twelve brands have a square standalone `symbol`; the other eight have only the wordmark lockup. `icon` is otherwise unused — it is an opaque JPEG tile for 13 of 21 brands and would sit inconsistently beside the transparent vectors. One exception, added by the widen-to-43 migration: `AI` (C3.ai) only exposes a light wordmark, unreadable on this app's light plate — its dark `icon` reads correctly there — so it's the one entry in `MARKS` (`src/lib/logos.ts`) pinned to `type: "icon"`.
   - **`max-w-full` caps a wordmark's width, which sets its drawn height** — the wider the lockup, the smaller it renders. It does not "make the plate wide enough", which is what this file claimed until the measurement was actually taken. In the 80×32 watchlist badge: square symbols draw the full 16px, then micron 15.4px, intuit 14.5px, Qualcomm 13.2px, and **servicenow 10.5px**, which is the weakest badge in the set. The badge padding is `px-1` rather than `px-2` for this reason — the 8px is worth ~1px of height on those four and costs the square marks nothing. Revisit servicenow first if legibility is raised at the gate; `icon` is not an improvement for it (a navy tile with unreadable text) and the lettermark loses the brand entirely.
   - **GOOGL points at `google.com`, not the ticker's own `abc.xyz`**, which resolves to the "Alphabet" wordmark instead of the Google G.
 

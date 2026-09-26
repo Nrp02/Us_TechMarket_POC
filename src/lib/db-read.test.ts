@@ -6,6 +6,7 @@ import {
   READ_RETRY_DELAYS_MS,
   readMaybeOne,
   readRows,
+  readAllRows,
   type QueryResult,
 } from "./db-read.ts";
 
@@ -35,6 +36,27 @@ const ok = <T,>(data: T[], count?: number): QueryResult<T> => ({
   data,
   error: null,
   count,
+});
+
+test("49 symbols with 27 bars are read completely across the 1000-row ceiling", async () => {
+  const all = Array.from({ length: 49 * 27 }, (_, index) => index);
+  const ranges: number[][] = [];
+  const result = await readAllRows("wide-session", async (_signal, from, to) => {
+    ranges.push([from, to]);
+    return ok(all.slice(from, to + 1), all.length);
+  });
+  assert.deepEqual(result, all);
+  assert.deepEqual(ranges, [[0, 999], [1000, 1999]]);
+});
+
+test("a short page with more rows reported throws instead of returning partial data", async () => {
+  await assert.rejects(readAllRows("incomplete", async () => ok([1], 1323)), /incomplete page/);
+});
+
+test("a concurrent insert between pages rejects the mixed read", async () => {
+  await assert.rejects(readAllRows("changing", async (_signal, from) =>
+    from === 0 ? ok(Array.from({ length: 1000 }, (_, i) => i), 1323) : ok([1000], 1324),
+  ), /row count changed/);
 });
 const fail = <T,>(message: string, code?: string): QueryResult<T> => ({
   data: null,

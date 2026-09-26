@@ -1,6 +1,6 @@
 import type { RawArticle } from "@/lib/finnhub-news";
 
-// Which of a cycle's fetched articles get handed to the Gemini call.
+// Which of a cycle's fetched articles get handed to the news AI call.
 //
 // Its own module rather than living in news-ingest.ts, for the reason
 // watchlist.ts records about next/headers: news-ingest.ts imports lib/supabase,

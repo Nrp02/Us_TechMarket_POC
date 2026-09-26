@@ -40,8 +40,8 @@ import type { MarketStory as MarketStoryData, Ticker } from "@/lib/queries";
 
 const VIXY_SYMBOL = "VIXY";
 const VIXY_LABEL = "Volatility (VIXY)";
-const MARKET_YTD_SYMBOL = "SPY";
-const MARKET_YTD_LABEL = "S&P 500 (SPY)";
+const MARKET_YTD_SYMBOL = "XLK";
+const MARKET_YTD_LABEL = "Technology (XLK)";
 
 function SectionText({ text }: { text: string }) {
   return (
@@ -53,10 +53,10 @@ function SectionText({ text }: { text: string }) {
 
 /**
  * A named wrapper for the two single-instrument charts (VIXY's range,
- * SPY's YTD line) — unlike Standout Movers/Sector Leadership, whose rows
+ * XLK's YTD line) — unlike Standout Movers/Sector Leadership, whose rows
  * carry their own symbol/sector labels, a lone RangeBar or YtdChart draws no
  * label of its own, and the paragraph beside it names the instrument only in
- * passing. Without this, "Volatility & Context" and "Today's Market Story"
+ * passing. Without this, "Volatility & Context" and "Year-to-Date Context"
  * would be the only two charts on the page that don't say what they plot.
  */
 function LabeledChart({ label, chart }: { label: string; chart: ReactNode }) {
@@ -102,14 +102,14 @@ function volatilityRangeChart(
   return <RangeBar min={min} max={max} current={vixyPrice} />;
 }
 
-/** Undefined before there are at least two of this year's SPY closes to draw a line from — same guard todays-story.tsx's ytdChart applies per stock. */
+/** Undefined before there are at least two of this year's XLK closes to draw a line from — same guard todays-story.tsx's ytdChart applies per stock. */
 function marketYtdChart(indexDailyCloses: { symbol: string; tradingDay: string; close: number }[]): ReactNode {
-  const spyCloses = indexDailyCloses.filter((row) => row.symbol === MARKET_YTD_SYMBOL);
-  if (spyCloses.length === 0) return undefined;
-  const newestYear = spyCloses
+  const xlkCloses = indexDailyCloses.filter((row) => row.symbol === MARKET_YTD_SYMBOL);
+  if (xlkCloses.length === 0) return undefined;
+  const newestYear = xlkCloses
     .reduce((newest, row) => (row.tradingDay > newest.tradingDay ? row : newest))
     .tradingDay.slice(0, 4);
-  const ytdCloses = spyCloses.filter((row) => row.tradingDay.slice(0, 4) === newestYear);
+  const ytdCloses = xlkCloses.filter((row) => row.tradingDay.slice(0, 4) === newestYear);
   if (ytdCloses.length < 2) return undefined;
   return <YtdChart closes={ytdCloses} />;
 }
@@ -144,8 +144,8 @@ export function MarketStory({
   const vixyRange = volatilityRangeChart(indexDailyCloses, vixyPrice);
   const volatilityChart = vixyRange && <LabeledChart label={VIXY_LABEL} chart={vixyRange} />;
 
-  const spyYtd = marketYtdChart(indexDailyCloses);
-  const ytdChart = spyYtd && <LabeledChart label={MARKET_YTD_LABEL} chart={spyYtd} />;
+  const xlkYtd = marketYtdChart(indexDailyCloses);
+  const ytdChart = xlkYtd && <LabeledChart label={MARKET_YTD_LABEL} chart={xlkYtd} />;
 
   const moverRows = moversRows(topMovers);
   const sectorLeadershipRows = sectorRows(sectorAverages);
@@ -177,7 +177,7 @@ export function MarketStory({
           chart={
             <RankedBars
               rows={moverRows}
-              ariaLabel={ariaLabelFor("Today's biggest movers among the tracked Top 20", moverRows)}
+              ariaLabel={ariaLabelFor("Today's biggest movers among the tracked stocks", moverRows)}
             />
           }
         />
@@ -217,15 +217,8 @@ export function MarketStory({
       </section>
 
       <section>
-        <SectionHeading>Today&apos;s Market Story</SectionHeading>
+        <SectionHeading>Year-to-Date Context</SectionHeading>
         <SectionCard text={story.sections.closingSynthesis} chart={ytdChart} />
-        <p className="mt-4 max-w-[62ch] text-xs leading-relaxed text-muted">
-          Written by AI from today&apos;s breadth, sector, index/proxy,
-          macro and news figures. Every section may infer a plausible,
-          data-grounded connection between them, but only from what&apos;s
-          shown here — never an outside fact, cause, or event. Nothing here
-          predicts future prices or offers investment advice.
-        </p>
       </section>
     </>
   );

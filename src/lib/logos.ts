@@ -22,15 +22,15 @@
 // was checked in a browser, not assumed, because the naming reads backwards.
 const CLIENT_ID = "1id9EpwYGkeL6X3l9Ad";
 
-type MarkType = "symbol" | "logo";
+type MarkType = "symbol" | "logo" | "icon";
 
 /**
- * The mark to draw for each of the Top 20, plus the asset type that reads best
+ * The mark to draw for all 43 tracked stocks, plus the asset type that reads best
  * at badge size.
  *
  * `symbol` is a standalone square-ish mark and is preferred wherever the brand
- * has one. The eight brands mapped to `logo` have no symbol asset at all, so
- * they get the wordmark lockup, which the plate is wide enough to hold.
+ * has one. Otherwise use the wordmark lockup, which the plate can hold.
+ * C3 AI only exposes a light wordmark; its dark icon reads on the light plate.
  *
  * Both the domain and the type were verified by rendering every entry in a real
  * browser against the live CDN. They could not be checked any other way:
@@ -62,6 +62,29 @@ const MARKS: Record<string, { domain: string; type: MarkType }> = {
   MU: { domain: "micron.com", type: "logo" },
   NOW: { domain: "servicenow.com", type: "logo" },
   INTU: { domain: "intuit.com", type: "logo" },
+  ASML: { domain: "asml.com", type: "logo" },
+  LRCX: { domain: "lamresearch.com", type: "symbol" },
+  KLAC: { domain: "kla.com", type: "symbol" },
+  MRVL: { domain: "marvell.com", type: "symbol" },
+  ON: { domain: "onsemi.com", type: "logo" },
+  SNOW: { domain: "snowflake.com", type: "symbol" },
+  WDAY: { domain: "workday.com", type: "logo" },
+  TEAM: { domain: "atlassian.com", type: "symbol" },
+  PANW: { domain: "paloaltonetworks.com", type: "symbol" },
+  NFLX: { domain: "netflix.com", type: "symbol" },
+  UBER: { domain: "uber.com", type: "logo" },
+  ABNB: { domain: "airbnb.com", type: "symbol" },
+  DELL: { domain: "dell.com", type: "logo" },
+  HPQ: { domain: "hp.com", type: "logo" },
+  WDC: { domain: "westerndigital.com", type: "logo" },
+  AI: { domain: "c3.ai", type: "icon" },
+  BBAI: { domain: "bigbear.ai", type: "logo" },
+  SOUN: { domain: "soundhound.com", type: "logo" },
+  RIVN: { domain: "rivian.com", type: "logo" },
+  LCID: { domain: "lucidmotors.com", type: "symbol" },
+  GM: { domain: "gm.com", type: "logo" },
+  F: { domain: "ford.com", type: "logo" },
+  NIO: { domain: "nio.com", type: "symbol" },
 };
 
 // Height is requested well above the largest size any component draws (36px) so
@@ -80,7 +103,7 @@ function markUrl(domain: string, type: MarkType): string {
   return `https://cdn.brandfetch.io/${domain}/h/96/theme/dark/fallback/404/type/${type}?c=${CLIENT_ID}`;
 }
 
-/** The mark for `symbol`, or null when it is not one of the Top 20. */
+/** The mark for `symbol`, or null when it is not a tracked stock. */
 export function logoSrc(symbol: string): string | null {
   const mark = MARKS[symbol];
   return mark ? markUrl(mark.domain, mark.type) : null;
@@ -96,5 +119,5 @@ export function logoSrc(symbol: string): string | null {
  */
 export const FINNHUB_LOGO = markUrl("finnhub.io", "logo");
 
-/** Exported for the test that keeps MARKS and TOP_20 in step. */
+/** Exported for the test that keeps MARKS and the tracked universe in step. */
 export const MARK_SYMBOLS = Object.keys(MARKS);

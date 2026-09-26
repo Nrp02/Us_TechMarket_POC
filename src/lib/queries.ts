@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 
 import { buildDayTicker } from "@/lib/day-ticker";
-import { readMaybeOne, readRows } from "@/lib/db-read";
+import { readAllRows, readMaybeOne, readRows } from "@/lib/db-read";
 import { dayWindow, tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
 import { newsRetentionCutoff } from "@/lib/news-retention";
@@ -130,24 +130,18 @@ async function getSparklines(): Promise<Map<string, number[]>> {
 
   const { from, to } = dayWindow(day);
 
-  // The one read in this file with no natural bound: it carries every tracked
-  // symbol's whole session in a single response. 25 symbols × 27 points = 675
-  // rows today, against a PostgREST ceiling of 1000 that truncates silently. The
-  // explicit limit does not raise that ceiling — it makes it visible in the
-  // source rather than an invisible server setting — and the exact count is what
-  // lets db-read tell a short reply from a complete one. It becomes a real
-  // problem at 38 tracked symbols, and the ordering is ascending, so truncation
-  // would drop the newest point of every sparkline at once.
-  const rows = await readRows<{ symbol: string; price: number; snapshot_at: string }>(
+  // 49 symbols × 27 bars exceed 1000 rows: read the entire ordered session.
+  const rows = await readAllRows<{ symbol: string; price: number; snapshot_at: string }>(
     "sparklines",
-    (signal) =>
+    (signal, start, end) =>
       db
         .from("intraday_snapshots")
         .select("symbol, price, snapshot_at", { count: "exact" })
         .gte("snapshot_at", from)
         .lt("snapshot_at", to)
         .order("snapshot_at", { ascending: true })
-        .limit(1000)
+        .order("symbol", { ascending: true })
+        .range(start, end)
         .abortSignal(signal),
   );
 
@@ -320,7 +314,7 @@ const getNewestNewsDay = unstable_cache(
   { revalidate: CACHE_SECONDS },
 );
 
-export type NewsFilter = { symbol?: string; sector?: string };
+export type NewsFilter = { sector?: string };
 
 async function getNewsUncached(
   category?: NewsCategory,
@@ -328,62 +322,21 @@ async function getNewsUncached(
   limit = 60,
   filter?: NewsFilter,
 ): Promise<NewsItem[]> {
-  // `count: "exact"` is asked for only on the day path, and the asymmetry is
-  // load-bearing: PostgREST reports the total matching rows, ignoring `limit`.
-  // On the teaser path `limit` is an intentional cap far below the ceiling, so a
-  // count would always exceed what came back and db-read would read every
-  // healthy read as truncated. On the day path the only cap is the ceiling
-  // itself, which is precisely what the count is there to catch.
-  const buildQuery = (signal: AbortSignal) => {
+  // Day views paginate completely; teaser/all-date views retain the chosen cap.
+  const buildQuery = (signal: AbortSignal, start = 0, end = 999) => {
     let query = db
       .from("news")
       .select(NEWS_COLUMNS, day ? { count: "exact" } : undefined)
-      .order("published_at", { ascending: false });
+      .order("published_at", { ascending: false })
+      .order("id", { ascending: false });
 
-    // `limit` is applied in Postgres only when there is no day filter, and that
-    // placement is the whole point rather than an optimisation.
-    //
-    // dayWindow is 36 hours wide because it has to *contain* an ET day (see
-    // below); the exact day is settled afterwards in JS. Applying the limit in
-    // Postgres therefore truncated the wrong set — it took the newest `limit`
-    // rows of the 36-hour window, which are dominated by the *next* ET day, and
-    // the JS filter then threw most of them away. Measured on ET 2026-08-20: the
-    // window held 183 rows, the day itself held 122, and the page rendered 5.
-    //
-    // It was worse than a simple undercount, because the category predicates run
-    // in Postgres too. Each tab drew its 60 from a smaller pool, so more of its
-    // rows survived the day filter than All News's did — 34 / 38 / 27 against 5,
-    // three tabs each larger than the tab that is supposed to contain them.
-    //
-    // So a day view is uncapped: the window bounds it to a few hundred rows, and
-    // a query returning 200 rows costs what one returning 1 costs here (the cost
-    // is per request — see CACHE_SECONDS). The `limit` argument is ignored on
-    // this path, which no caller exercises: only the Home teaser passes one, and
-    // it passes no day.
-    //
-    // PostgREST's own 1000-row ceiling is *not* a graceful backstop here, which
-    // is worth stating because it reads like one. It keeps the newest 1000 rows
-    // and drops the rest, and the newest rows of a 36-hour window are the next ET
-    // day — so a window that ever exceeded 1000 would lose the requested day from
-    // its oldest end and reproduce exactly the bug above, tabs outgrowing All News
-    // and all. Headroom is real (183 rows in the widest window measured). It is
-    // no longer trusted silently: the day path states the ceiling as an explicit
-    // limit and asks for the exact count, so exceeding it raises instead of
-    // quietly serving the wrong day. Tightening the window is still the fix if
-    // that ever fires.
-    //
-    // Headroom is smaller than it was. The widest window measured 183 rows when
-    // that was written; ET day 2026-09-04 alone now holds 253 articles, so the
-    // 36-hour window around a busy day runs ~350-400. This is the same growth
-    // that broke news-dates (see below, and migration 0009) — the day path is
-    // the next read that would fire, at roughly 2.5x today's volume.
-    query = day ? query.limit(1000) : query.limit(limit);
+    // Read all pages of the containing UTC window before applying the exact ET day.
+    query = day ? query.range(start, end) : query.limit(limit);
 
     // An empty tag list is what identifies the general feed; everything else is
-    // a Stock News article, optionally narrowed by one symbol or one sector.
+    // a Stock News article, optionally narrowed by one sector.
     if (category === "market") query = query.eq("related_symbols", "{}");
     if (category === "stock") query = query.neq("related_symbols", "{}");
-    if (filter?.symbol) query = query.contains("related_symbols", [filter.symbol]);
     if (filter?.sector) {
       const sectorSymbols = Object.entries(SECTOR_BY_SYMBOL)
         .filter(([, sector]) => sector === filter.sector)
@@ -407,7 +360,9 @@ async function getNewsUncached(
   // and the floor agree on an ordering; it is exactly the reasoning the day
   // filter broke, since a day is not a suffix of a newest-first list.
   const [rows, newestDay] = await Promise.all([
-    readRows<Record<string, unknown>>("news", buildQuery),
+    day
+      ? readAllRows<Record<string, unknown>>("news", buildQuery)
+      : readRows<Record<string, unknown>>("news", buildQuery),
     getNewestNewsDay(),
   ]);
   const cutoff = newsRetentionCutoff(newestDay);
@@ -602,7 +557,7 @@ async function getDailyCloses(
  * Market page's counterpart to getDailyCloses above, batched across the 6
  * index/sub-sector symbols the same way market-story-generation.ts's
  * loadIndexDailyCloses already batches it for the Groq job. Feeds Market
- * Story's charts (VIXY's trailing range, SPY's YTD line) with the same rows
+ * Story's charts (VIXY's trailing range, XLK's YTD line) with the same rows
  * buildMarketStoryInput uses to compute volatilityPercentile/rangePosition —
  * kept on the payload raw, same "don't discard what a chart needs" reasoning
  * getActivity already applies to a single stock's dailyCloses.
@@ -610,17 +565,26 @@ async function getDailyCloses(
 async function getIndexDailyClosesUncached(
   day: string,
 ): Promise<{ symbol: string; tradingDay: string; close: number; changePercent: number | null }[]> {
-  const rows = await readRows<{
+  // 6 symbols x up to 370 retained days can exceed PostgREST's 1000-row cap
+  // (measured live: 1512 matching rows truncated to 1000 with no ORDER BY,
+  // silently dropping XLK and VIXY entirely). readAllRows pages past the
+  // ceiling instead of a plain readRows, which would either miss the
+  // truncation (no count requested) or throw once retention genuinely grows
+  // past a single page — same pattern as getDayTickers below.
+  const rows = await readAllRows<{
     symbol: string;
     trading_day: string;
     close: number;
     change_percent: number | null;
-  }>("index-daily-closes", (signal) =>
+  }>("index-daily-closes", (signal, start, end) =>
     db
       .from("daily_closes")
-      .select("symbol, trading_day, close, change_percent")
+      .select("symbol, trading_day, close, change_percent", { count: "exact" })
       .in("symbol", INDEX_SYMBOLS)
       .lte("trading_day", day)
+      .order("trading_day", { ascending: true })
+      .order("symbol", { ascending: true })
+      .range(start, end)
       .abortSignal(signal),
   );
   return rows.map((row) => ({
@@ -722,9 +686,9 @@ export async function getDayTickers(symbols: string[], day: string): Promise<Tic
           .eq("trading_day", day)
           .abortSignal(signal),
     ),
-    readRows<{ symbol: string; price: number; volume: number | null; snapshot_at: string }>(
+    readAllRows<{ symbol: string; price: number; volume: number | null; snapshot_at: string }>(
       "day-ticker-snapshots",
-      (signal) =>
+      (signal, start, end) =>
         db
           .from("intraday_snapshots")
           .select("symbol, price, volume, snapshot_at", { count: "exact" })
@@ -732,7 +696,8 @@ export async function getDayTickers(symbols: string[], day: string): Promise<Tic
           .gte("snapshot_at", from)
           .lt("snapshot_at", to)
           .order("snapshot_at", { ascending: true })
-          .limit(1000)
+          .order("symbol", { ascending: true })
+          .range(start, end)
           .abortSignal(signal),
     ),
     readRows<{ symbol: string; avg_volume: number | null }>(

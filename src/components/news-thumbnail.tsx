@@ -4,11 +4,7 @@ import { FINNHUB_LOGO, logoSrc } from "@/lib/logos";
 // for a per-symbol article, and the data provider's mark for market news, which
 // belongs to no single company.
 //
-// The lettermark branch below is unreachable today and is kept only as a guard.
-// `related_symbols` cannot hold a non-Top-20 ticker — `mentionsSymbol` rejects
-// anything absent from `SYMBOL_ALIASES` — and `logos.test.ts` asserts all 20
-// have a mark, so `logoSrc` never returns null here. It would start mattering
-// if either of those changed.
+// All 43 tracked stocks share the same logo mapping and plate treatment.
 //
 // Note it does *not* cover the failure that can actually happen: an unreachable
 // CDN resolves to an empty plate, because that is an image that fails to load

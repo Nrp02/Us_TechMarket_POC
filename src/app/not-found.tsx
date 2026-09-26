@@ -13,8 +13,9 @@ export default function NotFound() {
       </h1>
 
       <p className="max-w-[49ch] text-sm leading-relaxed text-body">
-        This app tracks a fixed list of 20 US technology stocks, so a ticker
-        outside that list has no page. Nothing is broken — the stored prices,
+        Detailed stock pages cover a fixed list of 20 stocks, while News and
+        Market cover 43. A ticker outside the detailed list has no stock page.
+        The stored prices,
         news and summaries are all still there.
       </p>
 

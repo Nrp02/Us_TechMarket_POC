@@ -12,6 +12,7 @@
 
 import { isFomcDay, mostRecentDecision } from "./fomc-calendar.ts";
 import { FRED_SERIES } from "./fred.ts";
+import { TOP_20_SYMBOLS } from "./symbols.ts";
 import {
   computeBreadth,
   computeSectorAverages,
@@ -53,8 +54,8 @@ export type MarketStoryIndexClose = {
 
 export type MarketStoryInputParams = {
   day: string;
-  /** The Top 20's own changePercent/significant — same Ticker fields computeBreadth/computeSectorAverages already read. */
-  top20: { symbol: string; changePercent: number; significant: boolean }[];
+  /** Tracked stock changePercent/significant — same Ticker fields computeBreadth/computeSectorAverages already read. */
+  trackedStocks: { symbol: string; changePercent: number; significant: boolean }[];
   /** INDEX_CARDS' own tickers (NASDAQ/S&P/Dow/Tech/Volatility/Semiconductors), plus today's price so a range position can be computed against indexDailyCloses. */
   indices: { label: string; symbol: string; changePercent: number; price: number }[];
   /** Each proxy's own trailing history (up to 370 days, daily_closes' own retention) — backs the same "how unusual vs. its own past year" read story-input.ts already gives individual stocks. */
@@ -91,9 +92,9 @@ export type MarketStoryInput = {
 };
 
 export function buildMarketStoryInput(params: MarketStoryInputParams): MarketStoryInput {
-  const { day, top20, indices, indexDailyCloses, macro, news } = params;
+  const { day, trackedStocks, indices, indexDailyCloses, macro, news } = params;
 
-  const topMovers = computeTopMovers(top20);
+  const topMovers = computeTopMovers(trackedStocks);
 
   const indicesWithVolatility: MarketStoryIndex[] = indices.map((index) => {
     const closes = indexDailyCloses.filter((row) => row.symbol === index.symbol);
@@ -114,8 +115,8 @@ export function buildMarketStoryInput(params: MarketStoryInputParams): MarketSto
 
   return {
     day,
-    breadth: computeBreadth(top20),
-    sectorAverages: computeSectorAverages(top20),
+    breadth: computeBreadth(trackedStocks, trackedStocks.filter((t) => TOP_20_SYMBOLS.includes(t.symbol))),
+    sectorAverages: computeSectorAverages(trackedStocks),
     indices: indicesWithVolatility,
     topMovers,
     macro: macro.map((row) => ({

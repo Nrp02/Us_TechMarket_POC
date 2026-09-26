@@ -8,7 +8,7 @@ import {
 } from "@/lib/market-story-input";
 import { getDayTickers, getTickers } from "@/lib/queries";
 import { db } from "@/lib/supabase";
-import { INDEX_CARDS, INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
+import { INDEX_CARDS, INDEX_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 import { MARKET_ANALYSIS_GUIDELINE } from "@/lib/market-story-guideline";
 
 // The end-of-day Market Story job — the whole-market counterpart to
@@ -52,9 +52,9 @@ function buildPrompt(input: MarketStoryInput): string {
       decliners: input.breadth.decliners,
       unchanged: input.breadth.unchanged,
       "total tracked": input.breadth.total,
-      "cleared the Significant Movement rule": input.breadth.significantCount,
+      "Top-20 stocks only: cleared the Significant Movement rule": input.breadth.significantCount,
     },
-    "biggest movers among the tracked Top 20 stocks today": {
+    "biggest movers among the tracked stocks today": {
       "gainers, largest first": input.topMovers.gainers.map((m) => `${m.symbol} ${percentOrNull(m.changePercent)}`),
       "losers, largest first": input.topMovers.losers.map((m) => `${m.symbol} ${percentOrNull(m.changePercent)}`),
     },
@@ -66,7 +66,7 @@ function buildPrompt(input: MarketStoryInput): string {
         i.volatilityPercentile == null ? "not available" : `${i.volatilityPercentile.toFixed(0)}th percentile`,
       "position in its own trailing ~52-week range": i.rangeLabel ?? "not available",
     })),
-    "sector averages (mean percent change of the Top 20 stocks in each sector)": input.sectorAverages.map((s) => ({
+    "sector averages (mean percent change of the tracked stocks in each sector)": input.sectorAverages.map((s) => ({
       sector: s.sector,
       "average percent change": percentOrNull(s.averageChangePercent),
       "stocks in this sector tracked": s.count,
@@ -111,9 +111,9 @@ Return a JSON object with exactly these 8 keys, each a string:
    overview: the overall tape's direction and scale, using the breadth and
    index figures.
 
-2. "standoutMovers" — which index/sub-sector proxy AND which individual Top
-   20 stock(s) moved most today, using the "index and sub-sector proxies"
-   figures and the "biggest movers among the tracked Top 20 stocks" figures —
+2. "standoutMovers" — which index/sub-sector proxy AND which individual tracked
+   stock(s) moved most today, using the "index and sub-sector proxies"
+   figures and the "biggest movers among the tracked stocks" figures —
    name specific tickers, not just "some stocks."
 
 3. "sectorLeadership" — which sector led or lagged today, using the "sector
@@ -123,9 +123,18 @@ Return a JSON object with exactly these 8 keys, each a string:
 
 4. "breadth" — whether today's move was broad-based or concentrated, using
    the breadth figures (advancers/decliners/significant count) directly.
+   Significant count covers Top 20 only; say so explicitly. Do not describe
+   it as a count across the full tracked universe.
 
-5. "marketEvents" — the day's market-relevant news, using "market news
-   today." If it is empty, write exactly:
+5. "marketEvents" — from "market news today", select which specific items
+   are genuinely market-relevant (macro/policy/geopolitical stories with a
+   plausible read on markets — rate expectations, energy/oil supply, trade
+   or sanctions actions, major regulatory or court rulings) and ignore the
+   rest (celebrity, sports, lifestyle, or other items in the feed with no
+   market angle). Do not try to cite every item in the list — most days only
+   a handful will actually qualify; name and briefly explain those specific
+   ones. Only write the fallback line below if, after that selection, none
+   of the day's items qualify:
    "${NO_EVENTS}"
 
 6. "macroContext" — the macro backdrop this session sits in: any FRED
@@ -294,8 +303,8 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   // this is the one place that already does it right.
   const [allTickers, macroRows, news, indexDailyCloses] = await Promise.all([
     isHistorical
-      ? getDayTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS], resolvedDay)
-      : getTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS]),
+      ? getDayTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS], resolvedDay)
+      : getTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS]),
     readRows<{
       series_id: string;
       latest_date: string;
@@ -313,7 +322,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   ]);
 
   const bySymbol = new Map(allTickers.map((t) => [t.symbol, t]));
-  const top20 = TOP_20_SYMBOLS.flatMap((symbol) => {
+  const trackedStocks = TRACKED_STOCK_SYMBOLS.flatMap((symbol) => {
     const ticker = bySymbol.get(symbol);
     return ticker ? [{ symbol, changePercent: ticker.changePercent, significant: ticker.significant }] : [];
   });
@@ -340,7 +349,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
       priorValue: r.prior_value == null ? null : Number(r.prior_value),
     }));
 
-  const input = buildMarketStoryInput({ day: resolvedDay, top20, indices, indexDailyCloses, macro, news });
+  const input = buildMarketStoryInput({ day: resolvedDay, trackedStocks, indices, indexDailyCloses, macro, news });
   const prompt = buildPrompt(input);
 
   try {

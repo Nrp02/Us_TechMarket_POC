@@ -121,10 +121,10 @@ export const CIK_BY_SYMBOL: Record<string, string> = {
 };
 
 /**
- * One of 6 sectors per Top-20 symbol, from a one-time manual lookup — same
+ * One of 6 sectors per tracked symbol, from a one-time manual lookup — same
  * posture as PEERS above. Backs the News page's sector filter chips and (once
  * built) Market Story's sector-leadership section, both computed by grouping
- * the Top 20's own price moves rather than a live upstream call.
+ * the tracked stocks’ own price moves rather than a live upstream call.
  */
 export const SECTOR_BY_SYMBOL: Record<string, string> = {
   NVDA: "Semiconductors",
@@ -147,15 +147,34 @@ export const SECTOR_BY_SYMBOL: Record<string, string> = {
   CSCO: "Hardware/Devices",
   PLTR: "AI/Data Analytics",
   TSLA: "EV/Auto",
+  ASML: "Semiconductors", LRCX: "Semiconductors", KLAC: "Semiconductors", MRVL: "Semiconductors", ON: "Semiconductors",
+  SNOW: "Software/Cloud", WDAY: "Software/Cloud", TEAM: "Software/Cloud", PANW: "Software/Cloud",
+  NFLX: "Internet/Platform", UBER: "Internet/Platform", ABNB: "Internet/Platform",
+  DELL: "Hardware/Devices", HPQ: "Hardware/Devices", WDC: "Hardware/Devices",
+  AI: "AI/Data Analytics", BBAI: "AI/Data Analytics", SOUN: "AI/Data Analytics",
+  RIVN: "EV/Auto", LCID: "EV/Auto", GM: "EV/Auto", F: "EV/Auto", NIO: "EV/Auto",
 };
 
 export const SECTORS = [...new Set(Object.values(SECTOR_BY_SYMBOL))];
 
 export const INDEX_SYMBOLS = INDEX_CARDS.map((c) => c.symbol);
 export const TOP_20_SYMBOLS = TOP_20.map((s) => s.symbol);
+export const EXTENDED_STOCKS: TopStock[] = [
+  { symbol: "ASML", name: "ASML" }, { symbol: "LRCX", name: "Lam Research" },
+  { symbol: "KLAC", name: "KLA" }, { symbol: "MRVL", name: "Marvell" }, { symbol: "ON", name: "onsemi" },
+  { symbol: "SNOW", name: "Snowflake" }, { symbol: "WDAY", name: "Workday" },
+  { symbol: "TEAM", name: "Atlassian" }, { symbol: "PANW", name: "Palo Alto Networks" },
+  { symbol: "NFLX", name: "Netflix" }, { symbol: "UBER", name: "Uber" }, { symbol: "ABNB", name: "Airbnb" },
+  { symbol: "DELL", name: "Dell" }, { symbol: "HPQ", name: "HP Inc." }, { symbol: "WDC", name: "Western Digital" },
+  { symbol: "AI", name: "C3.ai" }, { symbol: "BBAI", name: "BigBear.ai" }, { symbol: "SOUN", name: "SoundHound AI" },
+  { symbol: "RIVN", name: "Rivian" }, { symbol: "LCID", name: "Lucid" },
+  { symbol: "GM", name: "General Motors" }, { symbol: "F", name: "Ford" }, { symbol: "NIO", name: "NIO" },
+];
+export const EXTENDED_SYMBOLS = EXTENDED_STOCKS.map((stock) => stock.symbol);
+export const TRACKED_STOCK_SYMBOLS = [...TOP_20_SYMBOLS, ...EXTENDED_SYMBOLS];
 export const ALL_SYMBOLS = [...TOP_20_SYMBOLS, ...INDEX_SYMBOLS];
 
-export const NAME_BY_SYMBOL = new Map(TOP_20.map((s) => [s.symbol, s.name]));
+export const NAME_BY_SYMBOL = new Map([...TOP_20, ...EXTENDED_STOCKS].map((s) => [s.symbol, s.name]));
 
 /**
  * Words that mean an article genuinely concerns a company, used to check
@@ -188,6 +207,14 @@ export const SYMBOL_ALIASES: Record<string, string[]> = {
   MU: ["micron", "mu"],
   NOW: ["servicenow"],
   INTU: ["intuit", "intu"],
+  ASML: ["asml"], LRCX: ["lam research", "lrcx"], KLAC: ["kla", "klac"], MRVL: ["marvell", "mrvl"],
+  ON: ["onsemi", "on semiconductor"],
+  SNOW: ["snowflake"], WDAY: ["workday", "wday"], TEAM: ["atlassian"], PANW: ["palo alto networks", "panw"],
+  NFLX: ["netflix", "nflx"], UBER: ["uber"], ABNB: ["airbnb", "abnb"],
+  DELL: ["dell"], HPQ: ["hp inc", "hewlett-packard", "hpq"], WDC: ["western digital", "wdc"],
+  AI: ["c3.ai", "c3 ai"], BBAI: ["bigbear.ai", "bigbear ai", "bbai"], SOUN: ["soundhound", "soun"],
+  RIVN: ["rivian", "rivn"], LCID: ["lucid", "lcid"], GM: ["general motors", "gm"],
+  F: ["ford"], NIO: ["nio"],
 };
 
 /** True when `text` actually references the company behind `symbol`. */

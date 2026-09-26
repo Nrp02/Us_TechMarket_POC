@@ -1309,6 +1309,21 @@ a {
   transform-origin: right;
 }
 
+/* Volume uses the same arrival rhythm, growing from its baseline rather than
+   changing a price or animating the SVG's layout dimensions. */
+@keyframes volume-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+.chart-volume {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: volume-grow 850ms cubic-bezier(0.16, 1, 0.3, 1)
+    calc(var(--enter-instruments) + 100ms) backwards;
+}
+
 /* --- The pane arriving --------------------------------------------------
    The product's one authored moment, and it belongs to the material rather
    than to any component: it lives on `panel-overlay`, so all four menus get it
@@ -1553,6 +1568,7 @@ a {
   .page-title,
   .chart-area,
   .chart-point,
+  .chart-volume,
   .bar-advancing,
   .bar-declining {
     animation: overlay-fade 200ms ease-out !important;

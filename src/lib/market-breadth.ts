@@ -1,4 +1,4 @@
-// Whole-market aggregate stats over the Top 20 — how many advanced vs.
+// Whole-market aggregate stats over the tracked stocks — how many advanced vs.
 // declined, how many cleared the existing Significant Movement rule, each
 // sector's average move, and the biggest individual gainers/losers. Pure
 // functions over already-computed ticker data (no new formula, no upstream
@@ -19,7 +19,7 @@ export type MarketBreadth = {
   significantCount: number;
 };
 
-export function computeBreadth(tickers: BreadthInput[]): MarketBreadth {
+export function computeBreadth(tickers: BreadthInput[], significanceTickers = tickers): MarketBreadth {
   const advancers = tickers.filter((t) => t.changePercent > 0).length;
   const decliners = tickers.filter((t) => t.changePercent < 0).length;
   return {
@@ -27,7 +27,7 @@ export function computeBreadth(tickers: BreadthInput[]): MarketBreadth {
     decliners,
     unchanged: tickers.length - advancers - decliners,
     total: tickers.length,
-    significantCount: tickers.filter((t) => t.significant).length,
+    significantCount: significanceTickers.filter((t) => t.significant).length,
   };
 }
 
@@ -62,7 +62,7 @@ export function computeSectorAverages(
 
 export type TopMover = { symbol: string; changePercent: number };
 
-/** How many of the Top 20's biggest gainers/losers to name individually — an average alone can't say which stock actually drove the day. */
+/** How many of the tracked stocks’ biggest gainers/losers to name individually — an average alone can't say which stock actually drove the day. */
 const TOP_MOVERS_COUNT = 3;
 
 /**

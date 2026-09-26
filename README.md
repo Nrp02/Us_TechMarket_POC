@@ -36,11 +36,11 @@ Every number in a summary is passed in pre-computed. The model states figures; i
 
 ### Your visit never touches a metered API
 
-Every external call — Finnhub, Yahoo, Gemini — comes from a scheduled server-side job. Pages read cached Postgres rows only, and each stock's summary is generated once per day and stored, so two visitors on the same page cost zero AI calls between them.
+Every data/AI call — Finnhub, Yahoo, Gemini, Groq and OpenRouter — comes from a scheduled server-side job. Pages read cached Postgres rows only; two visitors on the same page cost zero AI calls between them.
 
 This is enforced mechanically rather than by convention: importing an upstream client from a page or component **fails lint**, and the ingestion endpoint checks a shared secret and fails closed.
 
-It matters because the free tiers are small. Gemini's limit is **20 requests per day per project** — measured off a live 429, not read from a blog post — and the app runs at a worst case of **12**: eight batched news cycles and four batched summary runs. One call per article, or per page view, would exhaust the quota before a demo started.
+Gemini's measured limit is **20 requests/day/project**. It now handles AI Daily Summary only, normally four successful batches for Top 20 with up to 12 scheduled attempts. Free Dots via OpenRouter handles News blurbs, capped at 50 articles per attempt with reasoning disabled. This account currently has 50 free requests/day shared across models; the documented rate limit is 20 requests/minute. The proposed 12-cycle schedule uses 12 requests/day for a theoretical ceiling of 600 blurbs, subject to provider availability and pending articles staying in the fetch window. It is stored in code and has not been applied to live cron. News and market aggregates cover 43 stocks; deep stock analysis stays Top 20.
 
 ### A failed read is not an empty table
 
@@ -73,7 +73,7 @@ Arrival is sequenced in two phases — the room first, then the instruments draw
 | **Frontend + backend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4 |
 | **Database** | Supabase (Postgres) |
 | **Scheduling** | Supabase Cron (`pg_cron` + `pg_net`) — Vercel Hobby caps cron at once per day, which cannot deliver 15-minute snapshots |
-| **AI** | Gemini `gemini-3.5-flash`, free tier, batched |
+| **AI** | Gemini for Daily Summary; Groq for Stories; free Dots via OpenRouter for News |
 | **Hosting** | Vercel (`sin1`), with Vercel Web Analytics |
 
 **Data sources.** Finnhub for prices, company news and the earnings calendar; Yahoo Finance's chart endpoint for today's volume, intraday bars and the official closing print (Finnhub's free tier serves neither, and its quote drifts into after-hours trading once the bell has gone); Brandfetch's Logo CDN for company marks, hotlinked under its licence — the one upstream a browser touches, because it is a static-asset host that cannot starve a metered quota.
@@ -97,7 +97,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-You will need a `.env.local` with Supabase, Finnhub and Gemini credentials, plus a `CRON_SECRET`. Without them the app builds and serves, but every page shows its empty state.
+You will need a `.env.local` with Supabase, Finnhub, Gemini, Groq and OpenRouter credentials, plus a `CRON_SECRET`. Pages read Supabase; missing AI credentials leave that provider's output pending.
 
 ```bash
 npm run build        # production build

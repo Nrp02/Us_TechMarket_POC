@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { SECTOR_BY_SYMBOL, TOP_20_SYMBOLS } from "./symbols.ts";
+import { SECTOR_BY_SYMBOL, TRACKED_STOCK_SYMBOLS } from "./symbols.ts";
 
-test("every Top-20 symbol has exactly one sector", () => {
-  for (const symbol of TOP_20_SYMBOLS) {
+test("every tracked symbol has exactly one sector", () => {
+  for (const symbol of TRACKED_STOCK_SYMBOLS) {
     assert.ok(
       SECTOR_BY_SYMBOL[symbol],
       `${symbol} is missing from SECTOR_BY_SYMBOL`,
@@ -12,8 +12,8 @@ test("every Top-20 symbol has exactly one sector", () => {
   }
 });
 
-test("no sector is assigned to a symbol outside the Top 20", () => {
+test("no sector is assigned to a symbol outside the tracked universe", () => {
   for (const symbol of Object.keys(SECTOR_BY_SYMBOL)) {
-    assert.ok(TOP_20_SYMBOLS.includes(symbol), `${symbol} is not a Top-20 symbol`);
+    assert.ok(TRACKED_STOCK_SYMBOLS.includes(symbol), `${symbol} is not a tracked symbol`);
   }
 });

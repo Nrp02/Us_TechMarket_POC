@@ -1,5 +1,11 @@
 # Product
 
+Current coverage (2026-09-26): News and market aggregates cover 43 tracked
+stocks; single-stock deep analysis remains Top 20. News offers All plus six
+sector filters. Significance count is explicitly Top-20-only. A free model via
+OpenRouter handles news blurbs; Gemini handles AI Daily Summary. News stays
+visible when blurbs are pending.
+
 <!-- impeccable:product-schema 1 -->
 
 ## Platform

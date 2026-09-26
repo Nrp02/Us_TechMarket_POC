@@ -5,7 +5,7 @@ import { FRED_SERIES, fetchLatestTwo } from "@/lib/fred";
 import { tradingDay } from "@/lib/market";
 import { fetchFilings } from "@/lib/sec-edgar";
 import { db } from "@/lib/supabase";
-import { ALL_SYMBOLS, CIK_BY_SYMBOL, TOP_20_SYMBOLS } from "@/lib/symbols";
+import { CIK_BY_SYMBOL, INDEX_SYMBOLS, TOP_20_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 import { fetchDayData } from "@/lib/yahoo";
 
 // Populates price_cache and intraday_snapshots for every tracked symbol. The
@@ -14,6 +14,7 @@ import { fetchDayData } from "@/lib/yahoo";
 
 /** Finnhub allows 60 calls/min; this keeps a burst well inside that. */
 const CONCURRENCY = 5;
+const REFRESH_SYMBOLS = [...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS];
 
 const SNAPSHOT_MINUTES = 15;
 
@@ -209,7 +210,7 @@ export async function refreshMarketData(): Promise<RefreshResult> {
     // staleness check retries it.
   }
 
-  await mapLimit(ALL_SYMBOLS, CONCURRENCY, async (symbol) => {
+  await mapLimit(REFRESH_SYMBOLS, CONCURRENCY, async (symbol) => {
     try {
       const [quote, day] = await Promise.all([
         fetchQuote(symbol),
@@ -388,7 +389,7 @@ export async function refreshMarketData(): Promise<RefreshResult> {
   }
 
   return {
-    symbols: ALL_SYMBOLS.length,
+    symbols: REFRESH_SYMBOLS.length,
     prices: priceRows.length,
     snapshots: deduped.length,
     failed,

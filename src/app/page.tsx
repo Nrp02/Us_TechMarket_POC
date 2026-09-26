@@ -16,7 +16,7 @@ import {
   getSessionStamp,
   getTickers,
 } from "@/lib/queries";
-import { INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
+import { INDEX_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 
 // The Market page — whole-market overview, replacing the old personalized
 // Home. There is no separate full-table page: the "Stocks" nav item routes
@@ -47,7 +47,7 @@ export default async function Market({
   const today = tradingDay();
   const currentDay = day ?? availableDates[0] ?? today;
 
-  const allSymbols = [...INDEX_SYMBOLS, ...TOP_20_SYMBOLS];
+  const allSymbols = [...INDEX_SYMBOLS, ...TRACKED_STOCK_SYMBOLS];
   // News is not date-scoped here — the teaser's own job is "most recent 3,
   // whatever day" regardless of which session the figures above it show (same
   // reasoning getNewsTeaser's doc comment already states).
@@ -60,14 +60,14 @@ export default async function Market({
   ]);
   const bySymbol = new Map(all.map((t) => [t.symbol, t]));
   const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
-  const top20 = TOP_20_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
+  const trackedStocks = TRACKED_STOCK_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
 
   // Market Story's charts read the exact same aggregates the Groq prompt was
   // built from (see market-story-generation.ts's buildPrompt) — computed
   // here rather than fetched, so a chart and the sentence beside it can
   // never disagree about a number.
-  const topMovers = computeTopMovers(top20);
-  const sectorAverages = computeSectorAverages(top20);
+  const topMovers = computeTopMovers(trackedStocks);
+  const sectorAverages = computeSectorAverages(trackedStocks);
 
   const dateOptions = buildActivityDateOptions(availableDates, currentDay, today, (d) =>
     d === availableDates[0] ? "/" : `/?date=${d}`,
@@ -85,7 +85,7 @@ export default async function Market({
         <DatePicker dateLabel={activityDateLabel(currentDay, today)} options={dateOptions} />
       </div>
 
-      <SessionDigest tickers={top20} />
+      <SessionDigest tickers={trackedStocks} />
 
       <MarketOverview tickers={indices} />
 

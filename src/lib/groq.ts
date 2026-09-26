@@ -1,5 +1,5 @@
 // Groq client, used only by the Today's Story narrative job. Separate from and
-// unaffected by src/lib/gemini.ts, which still handles news summarization —
+// unaffected by src/lib/gemini.ts, which handles AI Daily Summary —
 // the two providers were split because Groq's binding constraint is
 // tokens-per-minute (measured live: 8,000 TPM against a 1,000/day rolling
 // request budget) rather than Gemini's per-day request cap, which is what

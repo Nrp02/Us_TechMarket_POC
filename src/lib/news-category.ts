@@ -1,9 +1,9 @@
-// Which News tab an article belongs to, plus the Stock News symbol/sector
+// Which News tab an article belongs to, plus the Stock News sector
 // filters.
 //
 // The Company/Industry split (watchlist overlap vs. not) is gone along with
-// the watchlist itself — Stock News now shows all Top-20-tagged articles
-// unfiltered by default, optionally narrowed by one symbol or one sector.
+// the watchlist itself — Stock News now shows all tracked-stock-tagged articles
+// unfiltered by default, optionally narrowed by one sector.
 
 import { SECTOR_BY_SYMBOL } from "./symbols.ts";
 
@@ -17,11 +17,6 @@ export type NewsCategory = "stock" | "market";
  */
 export function categoriseNews(relatedSymbols: string[]): NewsCategory {
   return relatedSymbols.length ? "stock" : "market";
-}
-
-/** True when `relatedSymbols` includes the given symbol. */
-export function matchesSymbol(relatedSymbols: string[], symbol: string): boolean {
-  return relatedSymbols.includes(symbol);
 }
 
 /** True when any of `relatedSymbols` belongs to the given sector. */

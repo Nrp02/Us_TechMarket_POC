@@ -28,7 +28,7 @@ type FinnhubArticle = {
 
 // Company news is high volume — a single symbol returned 141 articles across two
 // days — so each source is capped. Without this a cycle would hand hundreds of
-// articles to one Gemini call and bury the page in near-duplicates.
+// articles to one AI call and bury the page in near-duplicates.
 //
 // The per-symbol cap is set above the number actually kept because the
 // relevance filter below discards roughly half of what Finnhub returns.
@@ -36,16 +36,17 @@ type FinnhubArticle = {
 // 8 rather than 4: at 4 a genuinely busy stock lost articles at the fetch step,
 // before storage ever saw them — NVDA had 12 in one ET day, which four per
 // cycle could not carry. Raising it costs no extra Finnhub calls (the cap is
-// applied to one response, not per request) and no extra Gemini calls, since
+// applied to one response, not per request) and no extra AI calls, since
 // summarisation is capped separately in news-ingest.ts. It does mean the first
 // cycle after this change stores a large one-time backlog; blurbs backfill
 // newest-first over the following cycles.
 const PER_SYMBOL = 8;
 const PER_FEED = 15;
 
-async function get(path: string): Promise<FinnhubArticle[]> {
+async function get(path: string, jobSignal: AbortSignal): Promise<FinnhubArticle[]> {
   const res = await fetch(`${BASE}${path}&token=${process.env.FINNHUB_API_KEY}`, {
     cache: "no-store",
+    signal: AbortSignal.any([jobSignal, AbortSignal.timeout(10_000)]),
   });
   if (!res.ok) throw new Error(`Finnhub ${path.split("?")[0]} -> ${res.status}`);
   const json = (await res.json()) as unknown;
@@ -93,14 +94,20 @@ async function companyNews(
   from: string,
   to: string,
   errors: string[],
+  jobSignal: AbortSignal,
 ): Promise<RawArticle[]> {
-  const feeds = await Promise.all(
-    symbols.map(async (symbol) => {
+  const feeds: RawArticle[][] = [];
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(5, symbols.length) }, async () => {
+    while (next < symbols.length) {
+      const index = next++;
+      const symbol = symbols[index];
       try {
         const raw = await get(
           `/company-news?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}`,
+          jobSignal,
         );
-        return raw
+        feeds[index] = raw
           .filter((a) => mentionsSymbol(symbol, `${a.headline ?? ""} ${a.summary ?? ""}`))
           .slice(0, PER_SYMBOL)
           .flatMap((a) => normalise(a, symbol) ?? []);
@@ -111,10 +118,10 @@ async function companyNews(
         errors.push(
           `${symbol}: ${error instanceof Error ? error.message : "fetch failed"}`,
         );
-        return [];
+        feeds[index] = [];
       }
-    }),
-  );
+    }
+  }));
   return feeds.flat();
 }
 
@@ -128,18 +135,17 @@ async function companyNews(
  * it is general business and world news. So the page's Company/Industry split
  * is drawn from Finnhub's own per-symbol tagging instead.
  *
- * That split used to be decided here, by fetching the watchlist and the rest of
- * the Top 20 as two labelled passes. It is now derived per request from the
- * stored tickers (see lib/news-category.ts), because the watchlist is
- * per-visitor and a label written at fetch time describes nobody. Ingestion
- * therefore fetches all 20 symbols as one list — the same number of Finnhub
- * calls it always made, since watched + industry was already all 20.
+ * Ingestion fetches all 43 tracked stocks; the page derives Stock/Market
+ * and sector filters from the stored company tags.
  *
  * No AI infers any of this, per the rule that tickers come from Finnhub's field.
  */
 export async function fetchAllNews(
   symbols: string[],
+  { timeoutMs = 25_000 }: { timeoutMs?: number } = {},
 ): Promise<{ articles: RawArticle[]; errors: string[] }> {
+  // Nine worker waves must not consume the whole 60-second ingestion function.
+  const jobSignal = AbortSignal.timeout(timeoutMs);
   const today = new Date();
   const from = isoDate(new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000));
   const to = isoDate(today);
@@ -147,7 +153,7 @@ export async function fetchAllNews(
 
   const marketFeed = async (): Promise<RawArticle[]> => {
     try {
-      const raw = await get(`/news?category=general`);
+      const raw = await get(`/news?category=general`, jobSignal);
       return raw.slice(0, PER_FEED).flatMap((a) => normalise(a) ?? []);
     } catch (error) {
       errors.push(
@@ -158,7 +164,7 @@ export async function fetchAllNews(
   };
 
   const [perSymbol, market] = await Promise.all([
-    companyNews(symbols, from, to, errors),
+    companyNews(symbols, from, to, errors, jobSignal),
     marketFeed(),
   ]);
 
@@ -167,7 +173,12 @@ export async function fetchAllNews(
   // copy of the same article would not carry.
   const byId = new Map<number, RawArticle>();
   for (const article of [...perSymbol, ...market]) {
-    if (!byId.has(article.finnhubId)) byId.set(article.finnhubId, article);
+    const existing = byId.get(article.finnhubId);
+    if (existing) {
+      existing.relatedSymbols = [...new Set([...existing.relatedSymbols, ...article.relatedSymbols])];
+    } else {
+      byId.set(article.finnhubId, article);
+    }
   }
   return { articles: [...byId.values()], errors };
 }

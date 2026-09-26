@@ -29,47 +29,13 @@ const JOBS = [
     schedule: "*/15 13-21 * * 1-5",
     path: "/api/refresh",
   },
-  // 8x/day. News ingestion has no market-hours gate, so a DST shift changes
-  // nothing that matters here.
-  //
-  // Seven of the eight land before the daily-summaries window below, which is the
-  // point: the end-of-day job can only summarise news that is already stored,
-  // and under the old 4x schedule only three cycles ran first — the fourth was
-  // at 01:00 UTC, after every summary tick. 21:00 UTC is the last one before
-  // the window and sits at or after the close in both regimes (17:00 ET under
-  // EDT, 16:00 ET under EST), so a stock's day is complete when it is written
-  // up.
-  //
-  // 02:00 UTC is deliberately after the summary window. It exists to keep the
-  // News page fresh through the Thai morning (09:00 ICT), which the old 01:00
-  // UTC cycle was doing; the articles it stores belong to an ET day already
-  // summarised, exactly as before.
-  //
-  // 07:00 and 10:00 UTC (14:00 and 17:00 ICT) close the gap that one left.
-  // Between 02:00 and 12:00 UTC there was no cycle at all — ten hours, and they
-  // are 09:00-19:00 ICT, the whole of the owner's own working day.
-  //
-  // The stronger reason is where the articles actually are, which was measured
-  // rather than assumed and came out the opposite way round to the guess. That
-  // window is US pre-market, not a quiet overnight: counting the publication
-  // hour of all 664 stored articles, **47% of a day is published inside it**,
-  // peaking at 11:00 UTC (52) and 08:00 UTC (48). Nothing was lost — the noon
-  // cycle eventually swept them up — but half the day's news was invisible on
-  // the site for up to ten hours.
-  //
-  // The slots are picked by which one shrinks the largest waiting bucket, not
-  // by spacing. Articles published in an hour are stored by the first cycle
-  // after it, so each cycle owns a bucket; the largest was 312 articles before
-  // 07:00 was added, 206 after, and 133 once 10:00 joined it.
-  //
-  // Cycle count is also the ceiling on summarisation, which is the second
-  // constraint and the one that was actually being hit: MAX_PER_CYCLE is 25, so
-  // seven cycles could summarise at most 175 articles a day against real days
-  // of 166 — and coverage had already slipped to 87-89% on 2026-08-16 and
-  // 2026-08-19. Eight cycles lift the ceiling to 200.
+  // Twelve proposed cycles/day. Live schedules change only when this script is run.
   {
     name: "news-ingest",
-    schedule: "0 7,10,12,15,18,20,21,2 * * *",
+    // 12 cycles/day, offset from refresh (:00/:15/:30/:45) and EOD (:05/:15/...).
+    // Concurrency alone is not a requests/minute limiter.
+    // Preserve 21:07: after the close under EST and EDT, before the 22:05 summary.
+    schedule: "7 0,2,4,6,8,10,12,14,16,18,20,21 * * *",
     path: "/api/ingest-news",
   },
   // End-of-day Today's Activity summaries. Each run summarises the next couple

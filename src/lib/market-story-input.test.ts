@@ -5,7 +5,7 @@ import { buildMarketStoryInput } from "./market-story-input.ts";
 
 const BASE_PARAMS = {
   day: "2026-09-16", // a real 2026 FOMC decision day
-  top20: [
+  trackedStocks: [
     { symbol: "NVDA", changePercent: 2, significant: false },
     { symbol: "AMD", changePercent: -1, significant: false },
   ],
@@ -30,6 +30,21 @@ const BASE_PARAMS = {
   ],
 };
 
+test("extended stocks contribute to market figures but not Top-20 significance", () => {
+  const input = buildMarketStoryInput({
+    ...BASE_PARAMS,
+    trackedStocks: [
+      { symbol: "NVDA", changePercent: 6, significant: true },
+      { symbol: "ASML", changePercent: 8, significant: true },
+      { symbol: "F", changePercent: -7, significant: true },
+    ],
+  });
+  assert.equal(input.breadth.total, 3);
+  assert.equal(input.breadth.significantCount, 1);
+  assert.equal(input.topMovers.gainers[0].symbol, "ASML");
+  assert.equal(input.sectorAverages.find(s => s.sector === "Semiconductors")?.count, 2);
+});
+
 test("a realistic scenario assembles every field, computed rather than passed through", () => {
   const input = buildMarketStoryInput(BASE_PARAMS);
   assert.equal(input.breadth.advancers, 1);
@@ -44,7 +59,7 @@ test("a realistic scenario assembles every field, computed rather than passed th
 test("topMovers ranks the Top 20 by changePercent, gainers and losers each largest-first", () => {
   const input = buildMarketStoryInput({
     ...BASE_PARAMS,
-    top20: [
+    trackedStocks: [
       { symbol: "NVDA", changePercent: 2, significant: false },
       { symbol: "AMD", changePercent: -1, significant: false },
       { symbol: "AAPL", changePercent: 5, significant: false },

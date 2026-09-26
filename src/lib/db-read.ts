@@ -65,6 +65,27 @@ export const READ_RETRY_DELAYS_MS = [100, 300];
  */
 export const READ_TIMEOUT_MS = 2_000;
 
+/** Read beyond PostgREST's row ceiling; fail rather than cache a partial result. */
+export async function readAllRows<T>(
+  label: string,
+  build: (signal: AbortSignal, from: number, to: number) => PromiseLike<QueryResult<T>>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  const pageSize = 1000;
+  let expectedCount: number | null | undefined;
+  for (let from = 0; ; from += pageSize) {
+    const page = await readRowsWithCount(label, (signal) => build(signal, from, from + pageSize - 1));
+    if (from === 0) expectedCount = page.count;
+    else if (page.count !== expectedCount) throw new Error(`read ${label}: row count changed during pagination`);
+    rows.push(...page.rows);
+    if (page.count != null && rows.length >= page.count) return rows;
+    if (page.rows.length < pageSize) {
+      if (page.count != null && rows.length < page.count) throw new Error(`read ${label}: incomplete page`);
+      return rows;
+    }
+  }
+}
+
 /** A successful read slower than this is the signal that precedes a failure. */
 const SLOW_READ_MS = 1_000;
 

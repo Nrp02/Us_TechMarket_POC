@@ -178,6 +178,7 @@ export function IntradayChart({
           return (
             <rect
               key={point.at}
+              className="chart-volume"
               x={x(i) - barWidth / 2}
               y={VOLUME_BOTTOM - height}
               width={barWidth}

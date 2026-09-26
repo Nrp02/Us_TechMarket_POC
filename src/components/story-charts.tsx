@@ -78,7 +78,7 @@ export function ComparisonBars({
               {row.value != null && (
                 <span
                   aria-hidden
-                  className={`absolute inset-y-0 rounded-full ${
+                  className={`absolute inset-y-0 rounded-full ${diverging && row.value < 0 ? "bar-declining" : "bar-advancing"} ${
                     t === "up" ? "bg-semantic-up" : "bg-semantic-down"
                   }`}
                   style={
@@ -146,7 +146,7 @@ export function RankedBars({
               )}
               <span
                 aria-hidden
-                className={`absolute inset-y-0 rounded-full ${
+                className={`absolute inset-y-0 rounded-full ${diverging && row.value < 0 ? "bar-declining" : "bar-advancing"} ${
                   t === "up" ? "bg-semantic-up" : "bg-semantic-down"
                 }`}
                 style={
@@ -195,7 +195,7 @@ export function RangeBar({
       >
         <span
           aria-hidden
-          className="absolute top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-canvas bg-primary"
+          className="chart-point absolute top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-canvas bg-primary"
           style={{ left: `calc(${position * 100}% - 6px)` }}
         />
       </div>

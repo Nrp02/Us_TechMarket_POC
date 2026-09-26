@@ -1,6 +1,7 @@
 import { formatPercent } from "@/lib/format";
 import { computeBreadth } from "@/lib/market-breadth";
 import type { Ticker } from "@/lib/queries";
+import { TOP_20_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 
 // The first thing on Home, and now the only thing above Market Overview.
 //
@@ -30,7 +31,8 @@ export function SessionDigest({ tickers }: { tickers: Ticker[] }) {
   // The shared breadth computation (market-breadth.ts) — this is also what
   // Market Story's breadth section will read (ticket 07), so the figure a
   // visitor sees here and the one the narrative cites can never disagree.
-  const breadth = computeBreadth(tickers);
+  const significanceTickers = tickers.filter((ticker) => TOP_20_SYMBOLS.includes(ticker.symbol));
+  const breadth = computeBreadth(tickers, significanceTickers);
   const advancing = breadth.advancers;
   const declining = breadth.decliners;
   const moved = advancing + declining;
@@ -83,9 +85,9 @@ export function SessionDigest({ tickers }: { tickers: Ticker[] }) {
               makes sense inside a column with two edges to push against. */}
           <dl className="flex flex-wrap items-baseline gap-x-10 gap-y-2 text-xs">
             <div className="flex items-baseline gap-2">
-              <dt className="text-muted">Crossed the significance rule</dt>
+              <dt className="text-muted">Top 20 · crossed the significance rule</dt>
               <dd className="font-mono tabular-nums text-ink">
-                {significant} of {tickers.length}
+                {significant} of {significanceTickers.length}
               </dd>
             </div>
             <div className="flex items-baseline gap-2">
@@ -123,7 +125,7 @@ export function SessionDigest({ tickers }: { tickers: Ticker[] }) {
           so it belongs at that size, beside the figures it describes, rather
           than at body scale under a title that no longer exists. */}
       <p className="text-xs text-muted">
-        Prices recorded every 15 minutes across 20 US technology stocks.
+        Prices recorded every 15 minutes across {TRACKED_STOCK_SYMBOLS.length} tracked stocks.
       </p>
     </aside>
   );
