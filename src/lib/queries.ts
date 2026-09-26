@@ -8,7 +8,7 @@ import { computePeerComparison, type PeerComparison } from "@/lib/peer-compariso
 import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
 import { isSignificant, relativeVolume, significanceScore } from "@/lib/significance";
 import { db } from "@/lib/supabase";
-import { NAME_BY_SYMBOL, PEERS } from "@/lib/symbols";
+import { NAME_BY_SYMBOL, PEERS, SECTOR_BY_SYMBOL } from "@/lib/symbols";
 
 // Every Home page read comes from here. Nothing in this file calls an upstream
 // API — the tables are filled by lib/refresh.ts.
@@ -319,11 +319,13 @@ const getNewestNewsDay = unstable_cache(
   { revalidate: CACHE_SECONDS },
 );
 
+export type NewsFilter = { symbol?: string; sector?: string };
+
 async function getNewsUncached(
-  watchlist: string[],
   category?: NewsCategory,
   day?: string | null,
   limit = 60,
+  filter?: NewsFilter,
 ): Promise<NewsItem[]> {
   // `count: "exact"` is asked for only on the day path, and the asymmetry is
   // load-bearing: PostgREST reports the total matching rows, ignoring `limit`.
@@ -376,14 +378,16 @@ async function getNewsUncached(
     // the next read that would fire, at roughly 2.5x today's volume.
     query = day ? query.limit(1000) : query.limit(limit);
 
-    // An empty tag list is what identifies the general feed; everything else is a
-    // company article, sorted by whether the visitor watches any of its tickers.
+    // An empty tag list is what identifies the general feed; everything else is
+    // a Stock News article, optionally narrowed by one symbol or one sector.
     if (category === "market") query = query.eq("related_symbols", "{}");
-    if (category === "company") query = query.overlaps("related_symbols", watchlist);
-    if (category === "industry") {
-      query = query
-        .neq("related_symbols", "{}")
-        .not("related_symbols", "ov", `{${watchlist.join(",")}}`);
+    if (category === "stock") query = query.neq("related_symbols", "{}");
+    if (filter?.symbol) query = query.contains("related_symbols", [filter.symbol]);
+    if (filter?.sector) {
+      const sectorSymbols = Object.entries(SECTOR_BY_SYMBOL)
+        .filter(([, sector]) => sector === filter.sector)
+        .map(([symbol]) => symbol);
+      query = query.overlaps("related_symbols", sectorSymbols);
     }
 
     if (day) {
@@ -415,8 +419,6 @@ async function getNewsUncached(
     : items;
 }
 
-// The watchlist is an argument rather than a cookie read, so it lands in the
-// cache key and the Company and Industry tabs stay per-visitor.
 export const getNews = unstable_cache(getNewsUncached, ["news"], {
   revalidate: CACHE_SECONDS,
 });
@@ -428,11 +430,8 @@ export const getNews = unstable_cache(getNewsUncached, ["news"], {
  * "today's 3" — a quiet morning before today's first news cycle should not
  * empty out the Home page.
  */
-export async function getNewsTeaser(
-  watchlist: string[],
-  limit = 3,
-): Promise<NewsItem[]> {
-  return getNews(watchlist, undefined, null, limit);
+export async function getNewsTeaser(limit = 3): Promise<NewsItem[]> {
+  return getNews(undefined, null, limit);
 }
 
 /**

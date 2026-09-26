@@ -4,7 +4,6 @@ import { CompanyLogo } from "@/components/company-logo";
 import { SectionHeading } from "@/components/section-heading";
 import { Sparkline } from "@/components/sparkline";
 import { StatusBadge } from "@/components/status-badge";
-import { WatchlistPicker } from "@/components/watchlist-picker";
 import {
   formatChange,
   formatPercent,
@@ -14,8 +13,6 @@ import {
 } from "@/lib/format";
 import type { Ticker } from "@/lib/queries";
 import { SIGNIFICANCE_RULE_TEXT } from "@/lib/significance";
-import { TOP_20 } from "@/lib/symbols";
-import { WATCHLIST_MAX, WATCHLIST_MIN } from "@/lib/watchlist";
 
 // Seven columns carrying eight fields: Rel. Volume folded into the Volume cell
 // rather than getting a column of its own.
@@ -43,27 +40,10 @@ const HEADINGS = [
   "Chart (Day)",
 ];
 
-export function WatchlistTable({
-  tickers,
-  selected,
-}: {
-  tickers: Ticker[];
-  selected: string[];
-}) {
+export function WatchlistTable({ tickers }: { tickers: Ticker[] }) {
   return (
     <section>
-      <SectionHeading
-        meta={
-          <WatchlistPicker
-            universe={TOP_20}
-            selected={selected}
-            min={WATCHLIST_MIN}
-            cap={WATCHLIST_MAX}
-          />
-        }
-      >
-        My Watchlist
-      </SectionHeading>
+      <SectionHeading>My Watchlist</SectionHeading>
 
       {/* Below 600px this table is not a table any more — see the list under
           it. Hidden rather than left to scroll: 746px of min-content inside a

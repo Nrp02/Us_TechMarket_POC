@@ -29,7 +29,7 @@ export default function NotFound() {
           // a STATE, and state in this world is translucent.
           className="rounded-full bg-primary-fill px-4 py-2 text-sm font-semibold text-white shadow-[var(--elev-1)] transition-colors hover:bg-primary-fill-hover"
         >
-          Go to the watchlist
+          Go to Home
         </Link>
         <Link
           href="/todays-activity"

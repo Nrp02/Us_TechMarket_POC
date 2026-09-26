@@ -1,16 +1,12 @@
 import { redirect } from "next/navigation";
 
-import { readWatchlist } from "@/lib/watchlist";
+import { TOP_20_SYMBOLS } from "@/lib/symbols";
 
-// Today's Activity is always a page about one stock. The nav card's link lands
-// here, so it forwards to the first watchlist stock rather than showing a
-// picker the header switcher already provides.
-//
-// There is no empty state to handle: the watchlist has a minimum of one and
-// falls back to a default, so readWatchlist never returns an empty list.
-export const dynamic = "force-dynamic";
-
-export default async function TodaysActivity() {
-  const [first] = await readWatchlist();
-  redirect(`/todays-activity/${first}`);
+// Today's Activity is always a page about one stock. Forwards to the first
+// Top-20 symbol rather than showing a picker the header switcher already
+// provides. This route has no nav entry once ticket 03 renames the shell nav
+// to Market/Stocks/News — it exists only as a fallback for a bare
+// /todays-activity link.
+export default function TodaysActivity() {
+  redirect(`/todays-activity/${TOP_20_SYMBOLS[0]}`);
 }

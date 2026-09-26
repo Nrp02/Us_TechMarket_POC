@@ -6,15 +6,12 @@ import { WatchlistTable } from "@/components/watchlist-table";
 import { formatDayLong } from "@/lib/format";
 import { getNewsTeaser, getSessionStamp, getTickers } from "@/lib/queries";
 import { INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
-import { readWatchlist } from "@/lib/watchlist";
 
 // Reads cached tables only, never an upstream API.
 //
 // Deliberately not "force-dynamic": that setting also means revalidate 0, which
 // switched off the data cache in lib/queries.ts and made every render re-query
-// Supabase. The page is still rendered per request — readWatchlist reads a
-// cookie, which is what makes a route dynamic — so removing it changes nothing
-// a visitor sees except how often the query underneath actually runs.
+// Supabase.
 
 // Headroom for the read path's retry budget, not an expectation. A healthy
 // render is ~93ms on a cache hit and ~547ms on a miss; the ceiling only matters
@@ -24,12 +21,10 @@ import { readWatchlist } from "@/lib/watchlist";
 export const maxDuration = 30;
 
 export default async function Home() {
-  const watchlist = await readWatchlist();
-
-  // One ticker fetch covering indices + Top 20 (watchlist is always a subset of
-  // Top 20), sliced into the three views below — INDEX_SYMBOLS and
-  // TOP_20_SYMBOLS each independently trigger a full-session sparkline scan, so
-  // three separate calls would run that scan three times for the same day.
+  // One ticker fetch covering indices + Top 20, sliced into the two views
+  // below — INDEX_SYMBOLS and TOP_20_SYMBOLS each independently trigger a
+  // full-session sparkline scan, so two separate calls would run that scan
+  // twice for the same day.
   //
   // `Promise.all` rather than `allSettled`, and that is now a decision rather
   // than a default. Reads throw on failure (lib/db-read.ts), so allSettled would
@@ -41,7 +36,7 @@ export default async function Home() {
   // minute and no reload could fix it.
   const [all, news, session] = await Promise.all([
     getTickers([...INDEX_SYMBOLS, ...TOP_20_SYMBOLS]),
-    getNewsTeaser(watchlist, 3),
+    getNewsTeaser(3),
     // The same cached read the shell's session marker makes, so naming the day
     // for a screen reader here costs no extra query.
     getSessionStamp(),
@@ -49,7 +44,6 @@ export default async function Home() {
   const bySymbol = new Map(all.map((t) => [t.symbol, t]));
   const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
   const top20 = TOP_20_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
-  const watched = watchlist.map((s) => bySymbol.get(s)).filter((t) => t != null);
 
   return (
     <div className="page-enter flex flex-col gap-10 pb-10">
@@ -109,7 +103,7 @@ export default async function Home() {
           the table is the page's primary object while Top Movers is a digest
           of it. A digest does not get to cost the thing it summarises. */}
       <div className="grid grid-cols-1 gap-10 min-[1130px]:grid-cols-[minmax(748px,1fr)_minmax(300px,360px)] min-[1130px]:gap-6">
-        <WatchlistTable tickers={watched} selected={watchlist} />
+        <WatchlistTable tickers={top20} />
         <TopMovers tickers={top20} />
       </div>
 

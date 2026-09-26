@@ -7,7 +7,7 @@ import { tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
 import { resolveNewsDate } from "@/lib/news-date";
 import { getNews, getNewsDates } from "@/lib/queries";
-import { readWatchlist } from "@/lib/watchlist";
+import { SECTORS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // The one route still inheriting the layout's bare product name, so a News tab
 // and a Home tab were the same string. The template in layout.tsx appends the
@@ -22,9 +22,7 @@ export const metadata = { title: "News" };
 // what keeps the route dynamic.
 
 const TABS = [
-  { key: "all", label: "All News" },
-  { key: "company", label: "Company News" },
-  { key: "industry", label: "Industry News" },
+  { key: "stock", label: "Stock News" },
   { key: "market", label: "Market News" },
 ] as const;
 
@@ -37,10 +35,18 @@ function isTab(value: string | undefined): value is TabKey {
 // A tab switch used to also silently reset the date filter, and a date switch
 // reset the tab, because each control only ever wrote its own query param.
 // Every link on this page is built through here so both survive together.
-function buildHref(tab: TabKey, date?: string): string {
+// The symbol/sector filter only applies on the Stock News tab, so switching
+// to Market News drops it rather than carrying a filter that tab can't use.
+function buildHref(
+  tab: TabKey,
+  date?: string,
+  filter?: { symbol?: string; sector?: string },
+): string {
   const params = new URLSearchParams();
-  if (tab !== "all") params.set("tab", tab);
+  if (tab !== "stock") params.set("tab", tab);
   if (date) params.set("date", date);
+  if (tab === "stock" && filter?.symbol) params.set("symbol", filter.symbol);
+  if (tab === "stock" && filter?.sector) params.set("sector", filter.sector);
   const qs = params.toString();
   return qs ? `/news?${qs}` : "/news";
 }
@@ -52,28 +58,27 @@ export const maxDuration = 30;
 export default async function News({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; date?: string }>;
+  searchParams: Promise<{ tab?: string; date?: string; symbol?: string; sector?: string }>;
 }) {
-  const { tab, date } = await searchParams;
-  const active: TabKey = isTab(tab) ? tab : "all";
+  const { tab, date, symbol, sector } = await searchParams;
+  const active: TabKey = isTab(tab) ? tab : "stock";
   const today = tradingDay();
 
-  // Company and Industry are split against this visitor's watchlist at read
-  // time, so the same stored articles land differently for different visitors.
-  const watchlist = await readWatchlist();
+  // Only meaningful on the Stock News tab; a stray param on Market News is
+  // ignored rather than silently filtering a tab with no chips of its own.
+  const activeSymbol = active === "stock" && symbol && TOP_20_SYMBOLS.includes(symbol) ? symbol : undefined;
+  const activeSector = active === "stock" && sector && SECTORS.includes(sector) ? sector : undefined;
 
   // Resolved before the article read, since the read needs to know which day
   // (or "no day") to filter to. A hand-edited or stale `date` param falls back
-  // to today rather than showing an empty page with no explanation — same
-  // reasoning as a bad watchlist cookie normalising instead of breaking a page.
+  // to today rather than showing an empty page with no explanation.
   const availableDates = await getNewsDates();
   const resolved = resolveNewsDate(date, today, availableDates);
 
-  const items = await getNews(
-    watchlist,
-    active === "all" ? undefined : (active as NewsCategory),
-    resolved.date,
-  );
+  const items = await getNews(active as NewsCategory, resolved.date, undefined, {
+    symbol: activeSymbol,
+    sector: activeSector,
+  });
 
   const dateLabel = resolved.isAll
     ? "All dates"
@@ -88,6 +93,8 @@ export default async function News({
   // had no articles yet and all seven days were past ones.
   const otherDates = availableDates.filter((d) => d !== today);
 
+  const currentFilter = { symbol: activeSymbol, sector: activeSector };
+
   const dateOptions: DateOption[] = [
     {
       // Explicitly `today` rather than a bare /news, which no longer means the
@@ -97,19 +104,19 @@ export default async function News({
       // today's empty state.
       key: "today",
       label: "Today",
-      href: buildHref(active, today),
+      href: buildHref(active, today, currentFilter),
       current: resolved.isToday,
     },
     ...otherDates.map((d) => ({
       key: d,
       label: formatDay(d),
-      href: buildHref(active, d),
+      href: buildHref(active, d, currentFilter),
       current: resolved.date === d && !resolved.isToday,
     })),
     {
       key: "all",
       label: "All dates",
-      href: buildHref(active, "all"),
+      href: buildHref(active, "all", currentFilter),
       current: resolved.isAll,
       separator: true,
     },
@@ -176,7 +183,7 @@ export default async function News({
             return (
               <Link
                 key={t.key}
-                href={buildHref(t.key, dateParam)}
+                href={buildHref(t.key, dateParam, t.key === "stock" ? currentFilter : undefined)}
                 // The active tab was colour-only to a screen reader.
                 aria-current={isActive ? "page" : undefined}
                 // The active tab used to be a solid --color-primary-fill plate
@@ -214,6 +221,59 @@ export default async function News({
             provide. See news-date-picker.tsx for why. */}
         <NewsDatePicker dateLabel={dateLabel} options={dateOptions} />
       </div>
+
+      {/* Symbol/sector chips only apply to Stock News — Market News has no
+          per-symbol tagging to filter by. Both dimensions are single-choice:
+          picking a sector clears any symbol choice and vice versa, since the
+          spec treats "one symbol, one sector, or unfiltered" as the whole
+          space rather than a combined filter. */}
+      {active === "stock" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={buildHref("stock", resolved.isAll ? "all" : resolved.date ?? undefined)}
+            aria-current={!activeSymbol && !activeSector ? "page" : undefined}
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+              !activeSymbol && !activeSector
+                ? "nav-active text-primary-active"
+                : "text-body hover:bg-glass-lift hover:text-ink"
+            }`}
+          >
+            All
+          </Link>
+          {SECTORS.map((sectorOption) => (
+            <Link
+              key={sectorOption}
+              href={buildHref("stock", resolved.isAll ? "all" : resolved.date ?? undefined, {
+                sector: sectorOption,
+              })}
+              aria-current={activeSector === sectorOption ? "page" : undefined}
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                activeSector === sectorOption
+                  ? "nav-active text-primary-active"
+                  : "text-body hover:bg-glass-lift hover:text-ink"
+              }`}
+            >
+              {sectorOption}
+            </Link>
+          ))}
+          {TOP_20_SYMBOLS.map((symbolOption) => (
+            <Link
+              key={symbolOption}
+              href={buildHref("stock", resolved.isAll ? "all" : resolved.date ?? undefined, {
+                symbol: symbolOption,
+              })}
+              aria-current={activeSymbol === symbolOption ? "page" : undefined}
+              className={`inline-flex items-center rounded-full px-3 py-1 font-mono text-xs font-semibold transition-colors ${
+                activeSymbol === symbolOption
+                  ? "nav-active text-primary-active"
+                  : "text-body hover:bg-glass-lift hover:text-ink"
+              }`}
+            >
+              {symbolOption}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <NewsList items={items} emptyMessage={emptyMessage} />
     </div>

@@ -8,14 +8,13 @@ import { useEffect, useId, useRef, useState } from "react";
 // <details> has no outside-click-close behaviour (only the summary itself or
 // Escape closes it), which made this the one dropdown in the app that stayed
 // open when a visitor clicked elsewhere. Every other dropdown
-// (symbol-switcher.tsx, add-stock-menu.tsx, watchlist-picker.tsx) is a client
-// component with an explicit outside-click listener; this now matches them.
+// (symbol-switcher.tsx) is a client component with an explicit outside-click
+// listener; this now matches them.
 //
-// Deliberately not built on use-watchlist-menu.ts: that hook also carries
-// POST/DELETE mutation calls and a multi-row ARIA menu keyboard model for
-// rows with two controls each (pick a stock / remove it). This is a flat list
-// of navigation links with no mutation and no per-row controls, so it only
-// needs the open/close/outside-click/Escape piece, copied rather than shared.
+// A flat list of navigation links with no mutation and no per-row controls,
+// so it only needs the open/close/outside-click/Escape piece — no shared
+// menu hook exists in this codebase any more (the old watchlist-editing one
+// was removed along with the watchlist itself).
 
 export type DateOption = {
   key: string;

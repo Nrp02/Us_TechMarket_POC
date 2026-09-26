@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 
 import { ActivityStats } from "@/components/activity-stats";
 import { ActivityTimeline } from "@/components/activity-timeline";
-import { AddStockMenu } from "@/components/add-stock-menu";
 import { CompanyLogo } from "@/components/company-logo";
 import { IntradayChart } from "@/components/intraday-chart";
 import { SectionHeading } from "@/components/section-heading";
@@ -12,12 +11,11 @@ import { TodaysStory } from "@/components/todays-story";
 import { UpcomingEvents } from "@/components/upcoming-events";
 import { formatChange, formatDay, formatPercent, formatPrice } from "@/lib/format";
 import { getActivity } from "@/lib/queries";
-import { ALL_SYMBOLS } from "@/lib/symbols";
-import {
-  readWatchlist,
-  WATCHLIST_MAX,
-  WATCHLIST_MIN,
-} from "@/lib/watchlist";
+import { ALL_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
+
+// Alphabetical, not TOP_20_SYMBOLS's fixed by-market-cap order — a flat
+// navigation list with no personalization is easiest to scan sorted by name.
+const SWITCHER_SYMBOLS = [...TOP_20_SYMBOLS].sort();
 
 // One page per stock, reached through the nav card and the header switcher. There
 // is no secondary tab bar by design — Today's Story below replaces the
@@ -27,8 +25,9 @@ import {
 // written once, after the close.
 //
 // Not "force-dynamic" — see the note on the Home page: it implies revalidate 0
-// and disables the data cache getActivity depends on. readWatchlist reads a
-// cookie below, which is what keeps the route dynamic.
+// and disables the data cache getActivity depends on. The dynamic [symbol]
+// segment (no generateStaticParams) is what keeps the route rendered per
+// request.
 
 // Every route shared the one <title> from layout.tsx, so NVDA and AAPL were
 // indistinguishable in the tab strip, in history and in a bookmark — on a
@@ -76,9 +75,6 @@ export default async function TodaysActivityForSymbol({
   // app/error.tsx, which is recoverable and never cached.
   if (!ALL_SYMBOLS.includes(symbol)) notFound();
 
-  // Still needed for the header dropdown's +/- controls, even though the
-  // activity read itself no longer splits news by watchlist.
-  const watchlist = await readWatchlist();
   const activity = await getActivity(symbol);
 
   // A tracked symbol with no price_cache row yet — before the first refresh has
@@ -124,15 +120,11 @@ export default async function TodaysActivityForSymbol({
               Wrapped in an h1 because the page had no heading at all: the
               ticker was a bare <button>, so a screen reader's heading list
               gave this page no identity. The button keeps its own type
-              styling; the h1 is purely structural.
-
-              Adding a stock is a separate control from the switcher now —
-              see add-stock-menu.tsx for why the two were split. */}
+              styling; the h1 is purely structural. */}
           <div className="flex flex-wrap items-center gap-2">
             <h1>
-              <SymbolSwitcher symbol={ticker.symbol} symbols={watchlist} min={WATCHLIST_MIN} />
+              <SymbolSwitcher symbol={ticker.symbol} symbols={SWITCHER_SYMBOLS} />
             </h1>
-            <AddStockMenu symbols={watchlist} max={WATCHLIST_MAX} />
           </div>
         <p className="px-2 text-sm text-body">
           {ticker.name} · session of {formatDay(activity.sessionDay)}

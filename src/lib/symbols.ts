@@ -115,6 +115,37 @@ export const CIK_BY_SYMBOL: Record<string, string> = {
   INTU: "896878",
 };
 
+/**
+ * One of 6 sectors per Top-20 symbol, from a one-time manual lookup — same
+ * posture as PEERS above. Backs the News page's sector filter chips and (once
+ * built) Market Story's sector-leadership section, both computed by grouping
+ * the Top 20's own price moves rather than a live upstream call.
+ */
+export const SECTOR_BY_SYMBOL: Record<string, string> = {
+  NVDA: "Semiconductors",
+  AMD: "Semiconductors",
+  AVGO: "Semiconductors",
+  QCOM: "Semiconductors",
+  TXN: "Semiconductors",
+  MU: "Semiconductors",
+  INTC: "Semiconductors",
+  MSFT: "Software/Cloud",
+  ORCL: "Software/Cloud",
+  CRM: "Software/Cloud",
+  ADBE: "Software/Cloud",
+  NOW: "Software/Cloud",
+  INTU: "Software/Cloud",
+  GOOGL: "Internet/Platform",
+  META: "Internet/Platform",
+  AMZN: "Internet/Platform",
+  AAPL: "Hardware/Devices",
+  CSCO: "Hardware/Devices",
+  PLTR: "AI/Data Analytics",
+  TSLA: "EV/Auto",
+};
+
+export const SECTORS = [...new Set(Object.values(SECTOR_BY_SYMBOL))];
+
 export const INDEX_SYMBOLS = INDEX_CARDS.map((c) => c.symbol);
 export const TOP_20_SYMBOLS = TOP_20.map((s) => s.symbol);
 export const ALL_SYMBOLS = [...TOP_20_SYMBOLS, ...INDEX_SYMBOLS];
