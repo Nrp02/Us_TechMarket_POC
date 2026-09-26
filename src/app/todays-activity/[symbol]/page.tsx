@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ActivityStats } from "@/components/activity-stats";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { CompanyLogo } from "@/components/company-logo";
+import { DatePicker, type DateOption } from "@/components/date-picker";
 import { IntradayChart } from "@/components/intraday-chart";
 import { SectionHeading } from "@/components/section-heading";
 import { StatusBadge } from "@/components/status-badge";
@@ -10,7 +11,8 @@ import { SymbolSwitcher } from "@/components/symbol-switcher";
 import { TodaysStory } from "@/components/todays-story";
 import { UpcomingEvents } from "@/components/upcoming-events";
 import { formatChange, formatDay, formatPercent, formatPrice } from "@/lib/format";
-import { getActivity } from "@/lib/queries";
+import { tradingDay } from "@/lib/market";
+import { getActivity, getActivityDates } from "@/lib/queries";
 import { ALL_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // Alphabetical, not TOP_20_SYMBOLS's fixed by-market-cap order — a flat
@@ -61,9 +63,11 @@ export async function generateMetadata({
 
 export default async function TodaysActivityForSymbol({
   params,
+  searchParams,
 }: PageProps<"/todays-activity/[symbol]">) {
   const { symbol: raw } = await params;
   const symbol = raw.toUpperCase();
+  const { date } = await searchParams;
 
   // "Is this a stock we track" is a question about the fixed Top 20 plus the
   // index proxies, so it is settled against that list rather than against the
@@ -75,7 +79,14 @@ export default async function TodaysActivityForSymbol({
   // app/error.tsx, which is recoverable and never cached.
   if (!ALL_SYMBOLS.includes(symbol)) notFound();
 
-  const activity = await getActivity(symbol);
+  // A hand-edited or stale `date` param falls back to the live session rather
+  // than breaking the page — same normalising-instead-of-breaking posture the
+  // News page's date param and the old watchlist cookie both took.
+  const availableDates = await getActivityDates();
+  const requestedDate = typeof date === "string" ? date : undefined;
+  const day = requestedDate && availableDates.includes(requestedDate) ? requestedDate : undefined;
+
+  const activity = await getActivity(symbol, day);
 
   // A tracked symbol with no price_cache row yet — before the first refresh has
   // ever run for it. The only case left after the guard above.
@@ -83,6 +94,24 @@ export default async function TodaysActivityForSymbol({
 
   const { ticker } = activity;
   const up = ticker.changePercent >= 0;
+
+  // Approximate on purpose: availableDates[0] is the most recent day with ANY
+  // stored snapshot, computed across every symbol, while activity.sessionDay
+  // is resolved per-symbol inside getActivity. The two can differ by a day in
+  // an edge case (a gap for this one symbol), but this is only used to decide
+  // whether to show the historical disclosure note below, not to choose which
+  // data path getActivity itself takes — that decision is made correctly,
+  // independently, inside queries.ts.
+  const isHistorical = Boolean(day) && day !== availableDates[0];
+
+  const today = tradingDay();
+  const dateOptions: DateOption[] = availableDates.map((d) => ({
+    key: d,
+    label: d === today ? "Today" : formatDay(d),
+    href: `/todays-activity/${symbol}${d === availableDates[0] ? "" : `?date=${d}`}`,
+    current: d === activity.sessionDay,
+  }));
+  const dateLabel = activity.sessionDay === today ? "Today" : formatDay(activity.sessionDay);
 
   return (
     <div className="page-enter flex flex-col gap-10 pb-10">
@@ -126,9 +155,15 @@ export default async function TodaysActivityForSymbol({
               <SymbolSwitcher symbol={ticker.symbol} symbols={SWITCHER_SYMBOLS} />
             </h1>
           </div>
-        <p className="px-2 text-sm text-body">
-          {ticker.name} · session of {formatDay(activity.sessionDay)}
-        </p>
+        {/* w-fit: DatePicker's own root carries `ml-auto` (load-bearing for
+            its News page placement, a wide row it right-aligns within) — as a
+            block child of this grid's `minmax(0,1fr)` column it would
+            otherwise stretch to the column's full width and shove the picker
+            away from the text it's meant to sit beside. */}
+        <div className="flex w-fit flex-wrap items-center gap-2 px-2">
+          <p className="text-sm text-body">{ticker.name} · session of</p>
+          <DatePicker dateLabel={dateLabel} options={dateOptions} />
+        </div>
         </div>
 
         {/* The number the visitor came for, and it now sits at `text-figure`
@@ -184,6 +219,14 @@ export default async function TodaysActivityForSymbol({
           <StatusBadge significant={ticker.significant} onGlass />
         </div>
       </header>
+
+      {isHistorical && (
+        <p className="panel px-4 py-3 text-xs leading-relaxed text-muted">
+          Viewing a past session. Relative volume below divides this day&apos;s
+          volume by {ticker.symbol}&apos;s <em>current</em> 10-day average — there
+          is no stored historical average to compare it against instead.
+        </p>
+      )}
 
       <ActivityStats activity={activity} />
 

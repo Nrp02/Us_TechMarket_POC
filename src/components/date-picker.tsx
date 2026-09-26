@@ -15,6 +15,11 @@ import { useEffect, useId, useRef, useState } from "react";
 // so it only needs the open/close/outside-click/Escape piece — no shared
 // menu hook exists in this codebase any more (the old watchlist-editing one
 // was removed along with the watchlist itself).
+//
+// Originally news-date-picker.tsx/NewsDatePicker — generalized once Today's
+// Activity, Stocks and Market all needed the same 7-day picker (ticket 05/06)
+// and there was nothing News-specific in the component itself to justify
+// three more copies.
 
 export type DateOption = {
   key: string;
@@ -25,7 +30,7 @@ export type DateOption = {
   separator?: boolean;
 };
 
-export function NewsDatePicker({
+export function DatePicker({
   dateLabel,
   options,
 }: {

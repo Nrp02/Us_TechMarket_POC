@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 
+import { buildDayTicker } from "@/lib/day-ticker";
 import { readMaybeOne, readRows } from "@/lib/db-read";
 import { dayWindow, tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
@@ -637,15 +638,124 @@ async function getSymbolNews(symbol: string, day: string): Promise<NewsItem[]> {
 }
 
 /**
+ * The historical counterpart to getTickersUncached: builds the same Ticker
+ * shape for any of the previous 6 trading days, from daily_closes
+ * (price/change/change%, the real source now that it stores them directly —
+ * see migration 0010) and that day's intraday_snapshots (volume, summed per
+ * symbol — see day-ticker.ts for why a sum, not the last bar). Never used for
+ * "today" — the live path keeps reading price_cache exactly as before.
+ */
+async function getDayTickers(symbols: string[], day: string): Promise<Ticker[]> {
+  if (!symbols.length) return [];
+  const { from, to } = dayWindow(day);
+
+  const [closeRows, snapshotRows, avgVolRows] = await Promise.all([
+    readRows<{ symbol: string; close: number; change: number; change_percent: number }>(
+      "day-ticker-closes",
+      (signal) =>
+        db
+          .from("daily_closes")
+          .select("symbol, close, change, change_percent")
+          .in("symbol", symbols)
+          .eq("trading_day", day)
+          .abortSignal(signal),
+    ),
+    readRows<{ symbol: string; price: number; volume: number | null; snapshot_at: string }>(
+      "day-ticker-snapshots",
+      (signal) =>
+        db
+          .from("intraday_snapshots")
+          .select("symbol, price, volume, snapshot_at", { count: "exact" })
+          .in("symbol", symbols)
+          .gte("snapshot_at", from)
+          .lt("snapshot_at", to)
+          .order("snapshot_at", { ascending: true })
+          .limit(1000)
+          .abortSignal(signal),
+    ),
+    readRows<{ symbol: string; avg_volume: number | null }>(
+      "day-ticker-avgvol",
+      (signal) =>
+        db.from("price_cache").select("symbol, avg_volume").in("symbol", symbols).abortSignal(signal),
+    ),
+  ]);
+
+  const closeBySymbol = new Map(
+    closeRows.map((row) => [
+      row.symbol,
+      { close: Number(row.close), change: Number(row.change), changePercent: Number(row.change_percent) },
+    ]),
+  );
+  const avgVolBySymbol = new Map(
+    avgVolRows.map((row) => [row.symbol, row.avg_volume == null ? null : Number(row.avg_volume)]),
+  );
+
+  const bySymbol = new Map<string, { volumes: number[]; prices: number[] }>(
+    symbols.map((symbol) => [symbol, { volumes: [], prices: [] }]),
+  );
+  for (const row of snapshotRows) {
+    if (tradingDay(new Date(row.snapshot_at)) !== day) continue;
+    const bucket = bySymbol.get(row.symbol);
+    if (!bucket) continue;
+    if (row.volume != null) bucket.volumes.push(Number(row.volume));
+    bucket.prices.push(Number(row.price));
+  }
+
+  return symbols.flatMap((symbol) => {
+    const bucket = bySymbol.get(symbol)!;
+    const ticker = buildDayTicker({
+      symbol,
+      name: NAME_BY_SYMBOL.get(symbol) ?? symbol,
+      dailyClose: closeBySymbol.get(symbol) ?? null,
+      snapshotVolumes: bucket.volumes,
+      currentAvgVolume: avgVolBySymbol.get(symbol) ?? null,
+      sparkPrices: bucket.prices,
+    });
+    return ticker ? [ticker] : [];
+  });
+}
+
+/**
+ * Every ET trading day Today's Activity, Stocks and Market can show a
+ * historical view for, most recent first — bounded by intraday_snapshots'
+ * 7-day retention, since that's what a historical day's volume needs (see
+ * day-ticker.ts). Mirrors getNewsAvailableDatesUncached's RPC-over-scan
+ * approach and its floor reasoning exactly.
+ */
+async function getActivityDatesUncached(): Promise<string[]> {
+  const rows = await readRows<{ day: string }>("activity-dates", (signal) =>
+    db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal),
+  );
+  // Guards the same "paused-project resume" case news_days() guards against:
+  // the retention prune runs once a day and only guarantees non-empty, not an
+  // exact 7-day window, so this is trimmed to the most recent 7 in JS rather
+  // than trusted to already be exactly that.
+  return rows.map((row) => row.day).slice(0, 7);
+}
+
+export const getActivityDates = unstable_cache(
+  getActivityDatesUncached,
+  ["activity-dates"],
+  { revalidate: CACHE_SECONDS },
+);
+
+/**
  * Everything the Today's Activity page renders for one stock. Every field is a
  * cached table read — the page makes no upstream call and triggers no AI call;
  * the narrative was written once by the end-of-day job.
+ *
+ * `day` picks one of the previous 6 trading days instead of the live session.
+ * Omitted (the default), this is byte-identical to the pre-ticket-05 behavior:
+ * only the historical branch below is new code, the live branch is untouched.
  */
-async function getActivityUncached(symbol: string): Promise<Activity | null> {
-  // The snapshots decide which session the page shows, and everything below is
-  // then read for that one day — chart, news count, timeline and narrative all
-  // describing the same session rather than each picking its own.
-  const sessionDay = (await getLatestSessionDay(symbol)) ?? tradingDay();
+async function getActivityUncached(symbol: string, day?: string): Promise<Activity | null> {
+  // The snapshots decide which session the page shows by default, and
+  // everything below is then read for that one day — chart, news count,
+  // timeline and narrative all describing the same session rather than each
+  // picking its own.
+  const latestDay = (await getLatestSessionDay(symbol)) ?? tradingDay();
+  const sessionDay = day ?? latestDay;
+  const isHistorical = sessionDay !== latestDay;
 
   const peerSymbols = PEERS[symbol] ?? [];
 
@@ -658,11 +768,18 @@ async function getActivityUncached(symbol: string): Promise<Activity | null> {
       // Uncached on purpose: the whole of getActivity is cached below, so going
       // through the cached variant here would only add a second lookup for a
       // result this one already covers. Peers ride the same query — their
-      // prices are already in price_cache, so this is a wider `IN (...)` on a
-      // table already being read, not a new upstream call.
-      getTickersUncached([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], {
-        sparklines: false,
-      }),
+      // prices are already in price_cache (live) or daily_closes (historical),
+      // so this is a wider `IN (...)` on a table already being read, not a new
+      // upstream call.
+      //
+      // The live path is untouched — getTickersUncached against price_cache,
+      // exactly as before "day" existed. A historical day reads getDayTickers
+      // instead, which has no live cache to fall back on.
+      isHistorical
+        ? getDayTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], sessionDay)
+        : getTickersUncached([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], {
+            sparklines: false,
+          }),
       getIntraday(symbol, sessionDay),
       getSymbolNews(symbol, sessionDay),
       readRows<{ event_at: string; kind: string; label: string; detail: string | null }>(

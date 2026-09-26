@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { NewsDatePicker, type DateOption } from "@/components/news-date-picker";
+import { DatePicker, type DateOption } from "@/components/date-picker";
 import { NewsList } from "@/components/news-list";
 import { formatDay } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
@@ -218,8 +218,8 @@ export default async function News({
         {/* Client island — the rest of this page is a server component, but a
             dropdown that closes on outside click needs a listener, which a
             native <details> element (the previous approach here) can't
-            provide. See news-date-picker.tsx for why. */}
-        <NewsDatePicker dateLabel={dateLabel} options={dateOptions} />
+            provide. See date-picker.tsx for why. */}
+        <DatePicker dateLabel={dateLabel} options={dateOptions} />
       </div>
 
       {/* Symbol/sector chips only apply to Stock News — Market News has no
