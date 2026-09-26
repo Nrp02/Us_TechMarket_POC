@@ -31,11 +31,13 @@ const base: StoryInputParams = {
   news: [
     {
       headline: "NVIDIA beats on revenue",
+      summary: "NVIDIA reported quarterly revenue ahead of analyst estimates.",
       sourceUrl: "https://finnhub.io/x",
       publishedAt: "2026-08-21T13:00:00Z",
       relatedSymbols: ["NVDA"],
     },
   ],
+  secFilings: [],
 };
 
 test("a realistic scenario assembles every field, computed rather than passed through", () => {
@@ -43,7 +45,7 @@ test("a realistic scenario assembles every field, computed rather than passed th
 
   assert.equal(input.symbol, "NVDA");
   assert.equal(input.sessionDay, "2026-08-21");
-  assert.deepEqual(input.price, { price: 214.72, changePercent: 3.5 });
+  assert.deepEqual(input.price, { price: 214.72, changePercent: 3.5, relativeVolume: 1.8 });
 
   assert.equal(input.significance.significant, true); // 3.5% + 1.8x rvol crosses the combo branch
   assert.ok(input.significance.score >= 1);
@@ -73,6 +75,16 @@ test("a realistic scenario assembles every field, computed rather than passed th
 
   assert.equal(input.news.length, 1);
   assert.equal(input.news[0].headline, "NVIDIA beats on revenue");
+
+  assert.deepEqual(input.secFilings, []);
+});
+
+test("a same-day 8-K filing passes through unchanged", () => {
+  const input = buildStoryInput({
+    ...base,
+    secFilings: [{ form: "8-K", itemCodes: "2.02,9.01" }],
+  });
+  assert.deepEqual(input.secFilings, [{ form: "8-K", itemCodes: "2.02,9.01" }]);
 });
 
 test("missing peer data flows through as null, not a fabricated average", () => {

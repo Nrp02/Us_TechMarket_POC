@@ -1,8 +1,9 @@
 import { hasReliableClose, reconcileClose } from "@/lib/closing-price";
 import { fetchLatestEarnings, fetchMetrics, fetchQuote } from "@/lib/finnhub";
 import { tradingDay } from "@/lib/market";
+import { fetchFilings } from "@/lib/sec-edgar";
 import { db } from "@/lib/supabase";
-import { ALL_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
+import { ALL_SYMBOLS, CIK_BY_SYMBOL, TOP_20_SYMBOLS } from "@/lib/symbols";
 import { fetchDayData } from "@/lib/yahoo";
 
 // Populates price_cache and intraday_snapshots for every tracked symbol. The
@@ -67,6 +68,9 @@ export type RefreshResult = {
 /** This data changes quarterly; a 15-minute refresh cadence would be pure waste. */
 const FUNDAMENTALS_STALE_DAYS = 7;
 
+/** Matches sec_filings' own retention window (migration 0013) — no point fetching what the next prune pass would discard. */
+const SEC_FILINGS_RETENTION_DAYS = 370;
+
 export async function refreshMarketData(): Promise<RefreshResult> {
   // Average volume moves slowly, so it is only re-fetched when missing. That
   // keeps a warm run at one Finnhub call per symbol.
@@ -116,6 +120,14 @@ export async function refreshMarketData(): Promise<RefreshResult> {
     latest_earnings_period: string | null;
     latest_earnings_surprise_percent: number | null;
     updated_at: string;
+  }[] = [];
+  const filingRows: {
+    accession_number: string;
+    symbol: string;
+    form: string;
+    filing_date: string;
+    item_codes: string;
+    fetched_at: string;
   }[] = [];
 
   await mapLimit(ALL_SYMBOLS, CONCURRENCY, async (symbol) => {
@@ -219,6 +231,32 @@ export async function refreshMarketData(): Promise<RefreshResult> {
           // Left missing/stale; the next run's staleness check retries it.
         }
       }
+
+      // SEC 8-K filings apply to companies, not the index ETF proxies, and
+      // are re-fetched every tick (unlike fundamentals, a filing can appear
+      // at any point in the trading day) — dedup on accession_number in the
+      // upsert below is what keeps a repeat fetch cheap. Own try/catch: a
+      // filings failure must not mark the symbol's price data as failed too.
+      if (TOP_20_SYMBOLS.includes(symbol)) {
+        try {
+          const filings = await fetchFilings(CIK_BY_SYMBOL[symbol]);
+          const cutoff = Date.now() - SEC_FILINGS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+          for (const filing of filings) {
+            if (filing.form !== "8-K") continue;
+            if (new Date(filing.filingDate).getTime() < cutoff) continue;
+            filingRows.push({
+              accession_number: filing.accessionNumber,
+              symbol,
+              form: filing.form,
+              filing_date: filing.filingDate,
+              item_codes: filing.itemCodes,
+              fetched_at: new Date().toISOString(),
+            });
+          }
+        } catch {
+          // Left unfetched this tick; the next 15-minute tick retries.
+        }
+      }
     } catch {
       failed.push(symbol);
     }
@@ -258,6 +296,16 @@ export async function refreshMarketData(): Promise<RefreshResult> {
       .from("fundamentals")
       .upsert(fundamentalsRows, { onConflict: "symbol" });
     if (error) throw new Error(`fundamentals upsert: ${error.message}`);
+  }
+
+  if (filingRows.length) {
+    // ignoreDuplicates: this is an append-only event log keyed on SEC's own
+    // accession number, not a per-symbol cache — a repeat fetch across ticks
+    // must leave an already-stored filing untouched, never overwrite it.
+    const { error } = await db
+      .from("sec_filings")
+      .upsert(filingRows, { onConflict: "accession_number", ignoreDuplicates: true });
+    if (error) throw new Error(`sec_filings upsert: ${error.message}`);
   }
 
   return {

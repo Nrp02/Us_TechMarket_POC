@@ -65,24 +65,27 @@ function ytdChart(dailyCloses: Activity["dailyCloses"]): ReactNode {
   return <YtdChart closes={ytdCloses} />;
 }
 
+/**
+ * A plain, unelevated card for one of the 7 analytical sections — the same
+ * `.panel` base this page's numeric stat cards use (see activity-stats.tsx's
+ * Cell), adapted for prose/chart content instead of a single figure. Kept
+ * separate from the "What Happened" lede's `panel-raised` treatment: the
+ * elevation difference is what signals "summary, then analysis" without
+ * needing a second heading to say so.
+ */
+function SectionCard(props: { label: string; text: string; chart?: ReactNode }) {
+  return (
+    <div className="panel p-5 sm:p-6">
+      <StorySection {...props} />
+    </div>
+  );
+}
+
 export function TodaysStory({ activity }: { activity: Activity }) {
   const { ticker, sector, market, peers, dailyCloses, story } = activity;
 
   return (
-    <section className="panel-raised relative isolate overflow-hidden p-6 sm:p-8">
-      {/* Same wash as the card this replaces — the light in the room falling
-          on the product's most important panel, not the accent used as
-          decoration. See daily-summary-card.tsx's history for why
-          --color-weather rather than --color-primary. */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute -left-24 -top-32 -z-10 size-96 rounded-full opacity-[0.18]"
-        style={{
-          background:
-            "radial-gradient(closest-side, var(--color-weather), transparent)",
-        }}
-      />
-
+    <section>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-xl font-semibold tracking-tight text-ink">Today&apos;s Story</h2>
         {story && (
@@ -93,93 +96,99 @@ export function TodaysStory({ activity }: { activity: Activity }) {
       </div>
 
       {!story ? (
-        <p className="mt-4 text-sm text-body">
+        <p className="panel mt-4 p-5 text-sm text-body">
           No story for this session yet. Today&apos;s Story is written once per
           stock after the US market closes.
         </p>
       ) : (
-        <>
-          <div className="mt-5 flex flex-col gap-6">
-            {/* Headline: the story's own lede, not labeled like the sections
-                below it — it reads as the opening line of the briefing. */}
-            <div>
-              <p className="text-pretty font-serif text-lg leading-[1.5] text-ink">
-                {story.sections.headline.text}
-              </p>
-              {story.sections.headline.news && (
-                <p className="mt-2 text-sm text-body">
-                  <a
-                    href={story.sections.headline.news.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    {story.sections.headline.news.headline}
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                  {" · "}
-                  <time
-                    dateTime={story.sections.headline.news.publishedAt}
-                    className="font-mono text-xs tabular-nums text-muted"
-                  >
-                    {formatEtTime(story.sections.headline.news.publishedAt)}
-                  </time>
-                </p>
-              )}
-            </div>
-
-            <StorySection
-              label="Sector, Market & Peers"
-              text={story.sections.comparison}
-              chart={
-                <ComparisonBars
-                  stock={ticker.changePercent}
-                  sector={sector?.changePercent ?? null}
-                  market={market?.changePercent ?? null}
-                  peerAverage={peers.peerAveragePercent}
-                />
-              }
+        <div className="mt-5 flex flex-col gap-4">
+          {/* "What Happened" lede: its own elevated card, distinct from the 7
+              plain analytical cards below it — same corner wash this page's
+              single panel used to carry as a whole. See
+              daily-summary-card.tsx in git history for the measurements
+              behind it. */}
+          <div className="panel-raised relative isolate overflow-hidden p-6 sm:p-8">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -left-24 -top-32 -z-10 size-96 rounded-full opacity-[0.18]"
+              style={{
+                background:
+                  "radial-gradient(closest-side, var(--color-weather), transparent)",
+              }}
             />
-
-            <StorySection
-              label="Company-Specific or Market-Wide"
-              text={story.sections.classification}
-            />
-
-            <StorySection
-              label="Unusual vs. History"
-              text={story.sections.unusualness}
-              chart={rangeChart(dailyCloses, ticker.price)}
-            />
-
-            <StorySection label="Why It Moved" text={story.sections.explanation} />
-
-            <StorySection label="Business & Fundamentals" text={story.sections.fundamentals} />
-
-            <StorySection
-              label="Peer & Sector Relation"
-              text={story.sections.peerSectorRelation}
-            />
-
-            <StorySection
-              label="Year-to-Date"
-              text={story.sections.ytdTakeaway}
-              chart={ytdChart(dailyCloses)}
-            />
-          </div>
-
-          <div className="mt-6 border-t border-hairline pt-4">
-            <p className="max-w-[62ch] text-xs leading-relaxed text-muted">
-              Written by AI from {ticker.symbol}&apos;s recorded prices, volume,
-              peers, fundamentals, news and calendar for this session.
-              &quot;Why It Moved&quot; and &quot;Peer &amp; Sector Relation&quot;
-              may infer a plausible, data-grounded connection even where no
-              source states it explicitly — every other section states only
-              what the data shows. Nothing here predicts future prices or
-              offers investment advice.
+            <p className="text-pretty font-serif text-lg leading-[1.5] text-ink">
+              {story.sections.headline.text}
             </p>
+            {story.sections.headline.news && (
+              <p className="mt-2 text-sm text-body">
+                <a
+                  href={story.sections.headline.news.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  {story.sections.headline.news.headline}
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+                {" · "}
+                <time
+                  dateTime={story.sections.headline.news.publishedAt}
+                  className="font-mono text-xs tabular-nums text-muted"
+                >
+                  {formatEtTime(story.sections.headline.news.publishedAt)}
+                </time>
+              </p>
+            )}
           </div>
-        </>
+
+          <SectionCard
+            label="Sector, Market & Peers"
+            text={story.sections.comparison}
+            chart={
+              <ComparisonBars
+                stock={ticker.changePercent}
+                sector={sector?.changePercent ?? null}
+                market={market?.changePercent ?? null}
+                peerAverage={peers.peerAveragePercent}
+              />
+            }
+          />
+
+          <SectionCard
+            label="Company-Specific or Market-Wide"
+            text={story.sections.classification}
+          />
+
+          <SectionCard
+            label="Unusual vs. History"
+            text={story.sections.unusualness}
+            chart={rangeChart(dailyCloses, ticker.price)}
+          />
+
+          <SectionCard label="Why It Moved" text={story.sections.explanation} />
+
+          <SectionCard label="Business & Fundamentals" text={story.sections.fundamentals} />
+
+          <SectionCard
+            label="Peer & Sector Relation"
+            text={story.sections.peerSectorRelation}
+          />
+
+          <SectionCard
+            label="Year-to-Date"
+            text={story.sections.ytdTakeaway}
+            chart={ytdChart(dailyCloses)}
+          />
+
+          <p className="max-w-[62ch] text-xs leading-relaxed text-muted">
+            Written by AI from {ticker.symbol}&apos;s recorded prices, volume,
+            peers, fundamentals, news and calendar for this session. Every
+            section may infer a plausible, data-grounded connection between
+            them, but only from what&apos;s shown here — never an outside
+            fact, cause, or event. Nothing here predicts future prices or
+            offers investment advice.
+          </p>
+        </div>
       )}
     </section>
   );

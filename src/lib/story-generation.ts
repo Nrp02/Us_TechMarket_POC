@@ -1,9 +1,10 @@
-import { formatEtTime, formatPercent, formatPrice } from "@/lib/format";
+import { formatEtTime, formatPercent, formatPrice, formatRelVolume } from "@/lib/format";
 import { generateJson, GroqRateLimitError } from "@/lib/groq";
 import { dayWindow, tradingDay } from "@/lib/market";
 import { computePeriodPerformance } from "@/lib/period-performance";
 import { relativeVolume } from "@/lib/significance";
-import { buildStoryInput, type StoryDailyClose, type StoryFundamentals, type StoryInput, type StoryNewsItem } from "@/lib/story-input";
+import { ANALYSIS_GUIDELINE } from "@/lib/story-guideline";
+import { buildStoryInput, type StoryDailyClose, type StoryFundamentals, type StoryInput, type StoryNewsItem, type StorySecFiling } from "@/lib/story-input";
 import { db } from "@/lib/supabase";
 import { NAME_BY_SYMBOL, PEERS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
@@ -29,6 +30,30 @@ const STOCKS_PER_RUN = 2;
 
 /** Groq's own latency is low; this is a generous ceiling, not a measured one. */
 const CALL_TIMEOUT_MS = 30_000;
+
+/**
+ * Reasoning effort for the Groq call, now that the prompt's sentence cap is
+ * gone and the model is expected to actually think before answering.
+ * Measured live against production (NVDA/AAPL/MSFT, 2026-09-25): "high"
+ * consumed its entire completion-token budget on reasoning before emitting
+ * any JSON, failing outright; "medium" succeeded at 5,261 total tokens — over
+ * half of Groq's 8,000 TPM budget on its own, too tight for two calls (this
+ * job's STOCKS_PER_RUN) to land in the same scheduled tick; "low" succeeded
+ * at 3,697 and 4,040, comfortably fitting two calls inside the per-minute
+ * budget. See CLAUDE.md's AI call budget note for the full writeup.
+ */
+const REASONING_EFFORT = "low";
+
+/**
+ * Backstop now that the prompt sets no per-section sentence limit. This caps
+ * *completion* tokens only, which is a much smaller number than the
+ * total_tokens figures above (those include the prompt, which dominates the
+ * total at this prompt's size) — measured directly on a second pass (NVDA
+ * 429, AAPL 635 completion tokens at "low" effort), so 4,500 is generous
+ * headroom over real usage, not a guess extrapolated from the total-token
+ * figures.
+ */
+const MAX_COMPLETION_TOKENS = 4500;
 
 const SECTOR_SYMBOL = "XLK";
 const MARKET_SYMBOL = "SPY";
@@ -101,6 +126,7 @@ const NO_YTD =
   "There isn't enough of this year's trading history yet to state a year-to-date trend.";
 
 const percentOrNull = (value: number | null) => (value == null ? "not available" : formatPercent(value));
+const relVolumeOrNull = (value: number | null) => (value == null ? "not available" : formatRelVolume(value));
 
 function buildPrompt(
   symbol: string,
@@ -119,6 +145,7 @@ function buildPrompt(
       "closing price": formatPrice(story.price.price),
       "percent change": formatPercent(story.price.changePercent),
       "movement verdict": story.significance.significant ? "Significant" : "Normal",
+      "relative volume (today's volume vs its 10-day average)": relVolumeOrNull(story.price.relativeVolume),
     },
     "peer comparison": {
       "peer tickers": story.peers.symbols.length ? story.peers.symbols.join(", ") : "none configured",
@@ -142,7 +169,7 @@ function buildPrompt(
       "direction vs market (same/opposite = moved the same/opposite way as the market, regardless of who moved more)":
         story.divergence.vsMarketDirection ?? "not available",
     },
-    "movement classification (already computed, state it, do not re-derive it)": story.movementClassification,
+    "movement classification": story.movementClassification,
     "volatility vs own history": {
       "percentile of today's move size among this stock's past daily moves":
         story.volatility.percentile == null
@@ -152,7 +179,7 @@ function buildPrompt(
         story.volatility.rangePosition == null
           ? "not available"
           : `${Math.round(story.volatility.rangePosition * 100)}% of the way from the low to the high`,
-      "range label (already computed, state it, do not re-derive it)": story.volatility.rangeLabel ?? "not available",
+      "range label": story.volatility.rangeLabel ?? "not available",
     },
     "period performance": {
       "year-to-date": percentOrNull(story.periodPerformance.ytdPercent),
@@ -166,88 +193,117 @@ function buildPrompt(
           "revenue growth, trailing twelve months YoY": percentOrNull(story.fundamentals.revenueGrowthTtmYoY),
           "latest earnings period": story.fundamentals.latestEarningsPeriod ?? "not available",
           "latest earnings surprise": percentOrNull(story.fundamentals.latestEarningsSurprisePercent),
-          "earnings result (already computed, state it, do not re-derive it)": story.fundamentals.earningsSurprise,
-          "EPS growth trend (already computed, state it, do not re-derive it)": story.fundamentals.epsGrowthTrend,
-          "revenue growth trend (already computed, state it, do not re-derive it)": story.fundamentals.revenueGrowthTrend,
+          "earnings result": story.fundamentals.earningsSurprise,
+          "EPS growth trend": story.fundamentals.epsGrowthTrend,
+          "revenue growth trend": story.fundamentals.revenueGrowthTrend,
         }
       : null,
     "news today": news.map((item, index) => ({
       index,
-      headline: item.headline,
+      // The AI paraphrase already generated once by the news pipeline, when
+      // one exists yet — real article content to reason from, not just a
+      // title. Falls back to the bare headline for an article that hasn't
+      // been summarised yet, same as every other reader of this table does.
+      content: item.summary ?? item.headline,
       published: formatEtTime(item.publishedAt),
       "about this company specifically, or the wider industry": item.relatedSymbols.length <= 1 ? "company-specific" : "shared with other companies",
     })),
+    // Structured metadata only — form type and SEC's own item codes, never
+    // the filing's body text (this project never fetches or stores that).
+    // No item-code allow-list: the model judges relevance itself, same as
+    // every other input here.
+    "SEC filing(s) today": story.secFilings.length
+      ? story.secFilings.map((f) => ({ form: f.form, "SEC item codes": f.itemCodes || "none listed" }))
+      : "none",
   };
 
   return `You are writing "Today's Story" for one US technology stock on a stock-tracking
 dashboard. The reader wants a briefing that reads top-to-bottom as one coherent
-account, not a grid of disconnected facts.
+analysis, not a grid of disconnected facts restating numbers they can already
+see elsewhere on the page.
 
 All figures below are already computed. Copy each one exactly as written —
 never restate a number in another form, and never work out a new one.
 
-Return a JSON object with exactly these 8 keys, each a short string (1-3
-sentences) unless noted otherwise:
+${ANALYSIS_GUIDELINE}
 
-1. "headline" — an object { "text": string, "newsIndex": number | null }.
-   Pick the ONE item from "news today" that most deserves a reader's
-   attention, and say why in "text", grounded only in that article's own
-   content or metadata (its topic, how recent it is, whether it is
-   company-specific or shared with the industry) — never a claim that it
-   caused the price move; that is the "explanation" section's job only.
-   Set "newsIndex" to that item's index. If "news today" is empty, set
-   "newsIndex" to null and "text" to exactly:
+Return a JSON object with exactly these 8 keys:
+
+1. "headline" — an object { "text": string, "newsIndex": number | null }. A
+   short "What Happened" overview (roughly 1-2 sentences): today's price move,
+   plus whichever ONE item from "news today" most deserves a reader's
+   attention and why — grounded only in that article's own content or
+   metadata, never a claim that it caused the price move (that is
+   "explanation"'s job). If "SEC filing(s) today" is not "none", you may
+   mention that the company filed one (form and item codes only — never guess
+   at its contents). This is the summary lede; the 7 sections below it do the
+   actual analysis. Set "newsIndex" to that item's index. If "news today"
+   is empty, set "newsIndex" to null and describe only the price move, or if
+   there is truly nothing to say, use exactly:
    "${NO_HEADLINE_NEWS}"
 
 2. "comparison" — how this stock's move compares to its peer average, its
    sector and the market, using the "peer comparison" and "sector/market
-   divergence" figures. If every one of those figures is "not available",
-   write exactly:
+   divergence" figures. Establish what the peers/sector/market did before
+   drawing any conclusion about this stock specifically. If every one of
+   those figures is "not available", write exactly:
    "${NO_COMPARISON}"
 
-3. "classification" — state the already-computed "movement classification"
-   value in plain prose (company-specific / market-wide / unknown) and
-   ground it in the divergence figures that produced it. If the value is
-   "unknown", write exactly:
+3. "classification" — state the "movement classification" value and reason
+   through the divergence figures that produced it — don't just translate the
+   label into a sentence. If the value is "unknown", write exactly:
    "${NO_CLASSIFICATION}"
 
 4. "unusualness" — whether today's move is unusual for this stock, using the
-   volatility percentile and 52-week range position. If both are
-   "not available", write exactly:
+   volatility percentile and 52-week range position, and whether that lines up
+   with or contradicts what the other sections describe (e.g. an unusual move
+   with no clear driver, or an unusual move that peers also had). An unusual
+   day describes today, not a forecast for tomorrow. If both percentile and
+   range position are "not available", write exactly:
    "${NO_UNUSUALNESS}"
 
-5. "explanation" — a plausible, data-grounded account of why this stock moved
-   today. Unlike the other sections, you MAY infer a plausible connection
-   between today's news, peer/sector movement and the price move even if no
-   source explicitly states that link — but only when the data given
-   actually supports it. Still NEVER predict future prices or trends, and
-   NEVER give investment advice or buy/sell/hold framing. If nothing in the
-   input plausibly explains the move, write exactly:
+5. "explanation" — the fullest analytical read of why this stock moved today,
+   drawing on any of the input: news, peers/sector/market divergence,
+   fundamentals, volatility, and a same-day SEC filing if one is listed under
+   "SEC filing(s) today" (cite only its form and item codes — never speculate
+   about what the filing says beyond that). State plainly which part of the
+   day's data the explanation accounts for and which part (if any) it
+   doesn't. If nothing in the input plausibly explains the move, write
+   exactly:
    "${NO_EXPLANATION}"
 
-6. "fundamentals" — how the underlying business has been performing (earnings
-   result, EPS/revenue growth trend), using the "fundamentals" figures. If
-   fundamentals is null, write exactly:
+6. "fundamentals" — whether today's price/peer/sector performance is
+   consistent or inconsistent with the company's earnings/growth trend, using
+   the "fundamentals" figures alongside the day's price action — this is the
+   one section that must connect the two, not just restate the earnings
+   result in isolation. If fundamentals is null, write exactly:
    "${NO_FUNDAMENTALS}"
 
 7. "peerSectorRelation" — whether today's move relates to peers or the sector
-   moving the same way. Like "explanation", you may infer a plausible
-   connection from the divergence direction and peer figures without a
-   source stating it explicitly, but never predict future prices or give
-   investment advice. If direction vs sector and vs market are both "not
+   moving the same way, using the divergence direction and peer figures. If a
+   divergence exists, say whether anything else in the input (volume, news,
+   fundamentals) corroborates it as company-specific, or state plainly that
+   nothing does. If direction vs sector and vs market are both "not
    available", write exactly:
    "${NO_RELATION}"
 
-8. "ytdTakeaway" — what the year-to-date return tells the reader, in plain
-   language rather than restating the raw percentage. If "year-to-date" is
-   "not available", write exactly:
+8. "ytdTakeaway" — what the year-to-date and month-to-date returns tell the
+   reader about the stock's trajectory this year, in light of today's move —
+   plain language, not a restatement of the raw percentages. If "year-to-date"
+   is "not available", write exactly:
    "${NO_YTD}"
 
+Length: keep "headline" to roughly 1-2 sentences. The 7 analytical sections
+(2-8) have no sentence-count limit — write as much as the grounded reasoning
+actually needs, but never pad with restated numbers or a repeated conclusion.
+
 Further rules:
+- A section must not restate a conclusion an earlier section already reached
+  — each takes its own angle on the same underlying data.
+- Every claim must point to a specific figure or label present in the input
+  above. No outside fact, cause, or event may be introduced.
 - Never invent a fact, a number, a timestamp or a news item not in the input.
 - Never calculate a new number — every figure above is already final.
-- Outside of "explanation" and "peerSectorRelation", never claim one thing
-  caused another.
 - Never predict future prices, trends, or outcomes, anywhere.
 - Never give investment advice or recommendations of any kind, including
   "a good entry point", "investors should", or buy/sell/hold language.
@@ -297,7 +353,7 @@ async function loadNews(symbol: string, day: string): Promise<StoryNewsItem[]> {
   const { from, to } = dayWindow(day);
   const { data, error } = await db
     .from("news")
-    .select("headline, source_url, related_symbols, published_at")
+    .select("headline, source_url, related_symbols, published_at, news_summaries(summary)")
     .contains("related_symbols", [symbol])
     .gte("published_at", from)
     .lt("published_at", to)
@@ -307,10 +363,28 @@ async function loadNews(symbol: string, day: string): Promise<StoryNewsItem[]> {
     .filter((row) => tradingDay(new Date(row.published_at as string)) === day)
     .map((row) => ({
       headline: row.headline as string,
+      // news_id is news_summaries' primary key, so PostgREST embeds a single
+      // object here even though the client's inferred type says array — same
+      // shape day-data.ts and queries.ts already read this join as.
+      summary: (row.news_summaries as unknown as { summary: string } | null)?.summary ?? null,
       sourceUrl: row.source_url as string,
       publishedAt: row.published_at as string,
       relatedSymbols: (row.related_symbols as string[] | null) ?? [],
     }));
+}
+
+/** This symbol's own Form 8-K filing(s) dated today, if any (see migration 0013). */
+async function loadFilings(symbol: string, day: string): Promise<StorySecFiling[]> {
+  const { data, error } = await db
+    .from("sec_filings")
+    .select("form, item_codes")
+    .eq("symbol", symbol)
+    .eq("filing_date", day);
+  if (error) throw new Error(`sec_filings read for ${symbol}: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    form: row.form as string,
+    itemCodes: row.item_codes as string,
+  }));
 }
 
 async function generateOneStory(
@@ -329,10 +403,11 @@ async function generateOneStory(
   const sectorChangePercent = prices.get(SECTOR_SYMBOL)?.change_percent;
   const marketChangePercent = prices.get(MARKET_SYMBOL)?.change_percent;
 
-  const [dailyCloses, fundamentals, news] = await Promise.all([
+  const [dailyCloses, fundamentals, news, secFilings] = await Promise.all([
     loadDailyCloses(symbol, day),
     loadFundamentals(symbol),
     loadNews(symbol, day),
+    loadFilings(symbol, day),
   ]);
 
   const changePercent = Number(price.change_percent);
@@ -357,6 +432,7 @@ async function generateOneStory(
     periodPerformance,
     fundamentals,
     news,
+    secFilings,
   });
 
   const prompt = buildPrompt(
@@ -366,7 +442,11 @@ async function generateOneStory(
     sectorChangePercent == null ? null : Number(sectorChangePercent),
     marketChangePercent == null ? null : Number(marketChangePercent),
   );
-  const { data } = await generateJson<GroqModel>(prompt, { timeoutMs: CALL_TIMEOUT_MS });
+  const { data } = await generateJson<GroqModel>(prompt, {
+    timeoutMs: CALL_TIMEOUT_MS,
+    reasoningEffort: REASONING_EFFORT,
+    maxCompletionTokens: MAX_COMPLETION_TOKENS,
+  });
 
   const pickedNews =
     data.headline.newsIndex != null && news[data.headline.newsIndex]

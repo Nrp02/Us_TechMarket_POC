@@ -11,6 +11,8 @@ const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 export type GroqCallResult<T> = {
   data: T;
   tokens: number | undefined;
+  /** Completion tokens alone — what `max_completion_tokens` actually bounds, unlike `tokens` (prompt+completion). */
+  completionTokens: number | undefined;
 };
 
 /** Thrown on a 429 so the caller can skip the stock rather than retry or fail the run. */
@@ -18,7 +20,7 @@ export class GroqRateLimitError extends Error {}
 
 type GroqResponse = {
   choices?: { message?: { content?: string }; finish_reason?: string }[];
-  usage?: { total_tokens?: number };
+  usage?: { total_tokens?: number; completion_tokens?: number };
   error?: { message: string };
 };
 
@@ -29,7 +31,17 @@ type GroqResponse = {
  */
 export async function generateJson<T>(
   prompt: string,
-  { timeoutMs }: { timeoutMs?: number } = {},
+  {
+    timeoutMs,
+    reasoningEffort,
+    maxCompletionTokens,
+  }: {
+    timeoutMs?: number;
+    /** Groq's `reasoning_effort` param — this model only thinks before answering when it's set. */
+    reasoningEffort?: "low" | "medium" | "high";
+    /** Groq's `max_completion_tokens` — the backstop now that the prompt sets no sentence cap. */
+    maxCompletionTokens?: number;
+  } = {},
 ): Promise<GroqCallResult<T>> {
   const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-20b";
   const key = process.env.GROQ_API_KEY;
@@ -43,6 +55,8 @@ export async function generateJson<T>(
       messages: [{ role: "user", content: prompt }],
       temperature: 0,
       response_format: { type: "json_object" },
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      ...(maxCompletionTokens ? { max_completion_tokens: maxCompletionTokens } : {}),
     }),
     cache: "no-store",
     signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
@@ -66,5 +80,6 @@ export async function generateJson<T>(
   return {
     data: JSON.parse(text) as T,
     tokens: json.usage?.total_tokens,
+    completionTokens: json.usage?.completion_tokens,
   };
 }

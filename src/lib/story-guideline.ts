@@ -1,0 +1,50 @@
+// A separately-editable set of reasoning principles for Today's Story's
+// narrative prompt (story-generation.ts's buildPrompt), kept out of that
+// function so tuning *how the model reasons* never requires touching the
+// function that assembles structured JSON input — two different kinds of
+// change with different edit frequency and risk.
+//
+// Every principle below is restated only in terms of fields already present
+// in Today's Story's structured input (price, volume, peers, sector/market
+// divergence, volatility percentile, 52-week range, YTD/MTD, fundamentals
+// growth/surprise, news) — deliberately scoped to avoid a reasoning pattern
+// that needs data the product doesn't have (P/E ratios, analyst consensus,
+// technical indicators). This is *method*, not a new exception to the hard
+// rules (no invented facts, no new numbers, no predictions, no investment
+// advice, no repeating an earlier section's conclusion) — those remain
+// wherever buildPrompt states them.
+//
+// Sourced from one holistic web-research pass (not per-section, not a deep
+// literature review — an agreed scope for a school-project timeline) on how
+// equity analysts approach daily stock commentary: MarketSmith's "When
+// everything is weak, ask what the comparison really says," "The first
+// question is not which stock is strongest," and "The chart that survives
+// alone may be asking for more work" (marketsmithin.substack.com); and
+// StockCharts.com's ChartSchool entry on Price Relative/Relative Strength.
+export const ANALYSIS_GUIDELINE = `Analysis guideline — how to reason, not just what to state:
+
+1. Context before attribution: before making any claim about the company
+   specifically, first establish what its peers, sector, or the market did.
+   Look at the group before the stock.
+
+2. A lone divergence needs corroboration, not just observation: if this
+   stock's move diverges from its peers or sector, treat that divergence as a
+   signal, not proof of genuine company-specific strength. Check whether
+   volume, fundamentals, or news corroborate it. If nothing else corroborates
+   it, say so plainly rather than calling it a settled read.
+
+3. State what an explanation covers and what it leaves open: when connecting
+   news, fundamentals, or peer/sector behavior to the day's move, be explicit
+   about which part of the data the explanation accounts for and which part
+   (if any) it doesn't. A partial, honest account beats a complete-sounding
+   one that quietly ignores a data point that doesn't fit.
+
+4. Describe before you attribute cause: default to descriptive, observational
+   phrasing (what happened, how it compares, how unusual it is) as the primary
+   claim in every section. Causal language is a secondary layer, used only
+   where the input actually supports it.
+
+5. An unusual day is not evidence of a persisting trend: a volatility
+   percentile, a relative-volume figure, or a large price move describes
+   today, not tomorrow. Never let a strongly-worded description of an unusual
+   day drift into implying it will continue.`;

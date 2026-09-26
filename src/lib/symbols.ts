@@ -83,6 +83,38 @@ export const PEERS: Record<string, string[]> = {
   INTU: ["ADBE", "CRM", "NOW"],
 };
 
+/**
+ * SEC EDGAR CIK (Central Index Key) for each Top-20 symbol, sourced once from
+ * SEC's public ticker-to-CIK mapping file (`www.sec.gov/files/company_tickers.json`,
+ * confirmed live for all 20 during implementation) rather than fetched at
+ * runtime — same "one-time manual lookup" posture as PEERS above. Used by
+ * `src/lib/sec-edgar.ts` to query SEC's per-company submissions endpoint.
+ * Stored as the unpadded numeric string SEC's mapping file gives; the caller
+ * left-pads to 10 digits for the submissions URL.
+ */
+export const CIK_BY_SYMBOL: Record<string, string> = {
+  NVDA: "1045810",
+  AAPL: "320193",
+  MSFT: "789019",
+  GOOGL: "1652044",
+  AMZN: "1018724",
+  META: "1326801",
+  AVGO: "1730168",
+  TSLA: "1318605",
+  ORCL: "1341439",
+  PLTR: "1321655",
+  AMD: "2488",
+  CRM: "1108524",
+  CSCO: "858877",
+  ADBE: "796343",
+  INTC: "50863",
+  QCOM: "804328",
+  TXN: "97476",
+  MU: "723125",
+  NOW: "1373715",
+  INTU: "896878",
+};
+
 export const INDEX_SYMBOLS = INDEX_CARDS.map((c) => c.symbol);
 export const TOP_20_SYMBOLS = TOP_20.map((s) => s.symbol);
 export const ALL_SYMBOLS = [...TOP_20_SYMBOLS, ...INDEX_SYMBOLS];
