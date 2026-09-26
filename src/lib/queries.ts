@@ -645,7 +645,7 @@ async function getSymbolNews(symbol: string, day: string): Promise<NewsItem[]> {
  * symbol — see day-ticker.ts for why a sum, not the last bar). Never used for
  * "today" — the live path keeps reading price_cache exactly as before.
  */
-async function getDayTickers(symbols: string[], day: string): Promise<Ticker[]> {
+export async function getDayTickers(symbols: string[], day: string): Promise<Ticker[]> {
   if (!symbols.length) return [];
   const { from, to } = dayWindow(day);
 

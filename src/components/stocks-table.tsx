@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { CompanyLogo } from "@/components/company-logo";
 import { SectionHeading } from "@/components/section-heading";
@@ -40,10 +41,10 @@ const HEADINGS = [
   "Chart (Day)",
 ];
 
-export function StocksTable({ tickers }: { tickers: Ticker[] }) {
+export function StocksTable({ tickers, meta }: { tickers: Ticker[]; meta?: ReactNode }) {
   return (
     <section>
-      <SectionHeading>Stocks</SectionHeading>
+      <SectionHeading meta={meta}>Stocks</SectionHeading>
 
       {/* Below 600px this table is not a table any more — see the list under
           it. Hidden rather than left to scroll: 746px of min-content inside a

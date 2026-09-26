@@ -1,8 +1,11 @@
+import { DatePicker } from "@/components/date-picker";
 import { MarketOverview } from "@/components/market-overview";
 import { NewsTeaser } from "@/components/news-teaser";
 import { SessionDigest } from "@/components/session-digest";
+import { activityDateLabel, buildActivityDateOptions, resolveActivityDay } from "@/lib/activity-date";
 import { formatDayLong } from "@/lib/format";
-import { getNewsTeaser, getSessionStamp, getTickers } from "@/lib/queries";
+import { tradingDay } from "@/lib/market";
+import { getActivityDates, getDayTickers, getNewsTeaser, getSessionStamp, getTickers } from "@/lib/queries";
 import { INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // The Market page — whole-market overview, replacing the old personalized
@@ -22,21 +25,33 @@ import { INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
 // set nothing and ran on the platform default, which is below that.
 export const maxDuration = 30;
 
-export default async function Market() {
-  // One ticker fetch covering indices + Top 20 — SessionDigest's breadth
-  // figures are counted across the Top 20, Market Overview's cards read the
-  // indices. Both independently trigger a full-session sparkline scan, so a
-  // single shared fetch avoids running that scan twice for the same day.
+export default async function Market({
+  searchParams,
+}: PageProps<"/">) {
+  const { date } = await searchParams;
+  const requestedDate = typeof date === "string" ? date : undefined;
+
+  const availableDates = await getActivityDates();
+  const day = resolveActivityDay(requestedDate, availableDates);
+  const today = tradingDay();
+  const currentDay = day ?? availableDates[0] ?? today;
+
+  const allSymbols = [...INDEX_SYMBOLS, ...TOP_20_SYMBOLS];
+  // News is not date-scoped here — the teaser's own job is "most recent 3,
+  // whatever day" regardless of which session the figures above it show (same
+  // reasoning getNewsTeaser's doc comment already states).
   const [all, news, session] = await Promise.all([
-    getTickers([...INDEX_SYMBOLS, ...TOP_20_SYMBOLS]),
+    day ? getDayTickers(allSymbols, day) : getTickers(allSymbols),
     getNewsTeaser(3),
-    // The same cached read the shell's session marker makes, so naming the day
-    // for a screen reader here costs no extra query.
     getSessionStamp(),
   ]);
   const bySymbol = new Map(all.map((t) => [t.symbol, t]));
   const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
   const top20 = TOP_20_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
+
+  const dateOptions = buildActivityDateOptions(availableDates, currentDay, today, (d) =>
+    d === availableDates[0] ? "/" : `/?date=${d}`,
+  );
 
   return (
     <div className="page-enter flex flex-col gap-10 pb-10">
@@ -45,6 +60,10 @@ export default async function Market() {
           ? `Market session of ${formatDayLong(session.day)}`
           : "US TechMarket — no session recorded yet"}
       </h1>
+
+      <div className="flex justify-end">
+        <DatePicker dateLabel={activityDateLabel(currentDay, today)} options={dateOptions} />
+      </div>
 
       <SessionDigest tickers={top20} />
 

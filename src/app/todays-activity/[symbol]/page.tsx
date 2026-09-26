@@ -3,14 +3,15 @@ import { notFound } from "next/navigation";
 import { ActivityStats } from "@/components/activity-stats";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { CompanyLogo } from "@/components/company-logo";
-import { DatePicker, type DateOption } from "@/components/date-picker";
+import { DatePicker } from "@/components/date-picker";
 import { IntradayChart } from "@/components/intraday-chart";
 import { SectionHeading } from "@/components/section-heading";
 import { StatusBadge } from "@/components/status-badge";
 import { SymbolSwitcher } from "@/components/symbol-switcher";
 import { TodaysStory } from "@/components/todays-story";
 import { UpcomingEvents } from "@/components/upcoming-events";
-import { formatChange, formatDay, formatPercent, formatPrice } from "@/lib/format";
+import { activityDateLabel, buildActivityDateOptions, resolveActivityDay } from "@/lib/activity-date";
+import { formatChange, formatPercent, formatPrice } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
 import { getActivity, getActivityDates } from "@/lib/queries";
 import { ALL_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
@@ -84,7 +85,7 @@ export default async function TodaysActivityForSymbol({
   // News page's date param and the old watchlist cookie both took.
   const availableDates = await getActivityDates();
   const requestedDate = typeof date === "string" ? date : undefined;
-  const day = requestedDate && availableDates.includes(requestedDate) ? requestedDate : undefined;
+  const day = resolveActivityDay(requestedDate, availableDates);
 
   const activity = await getActivity(symbol, day);
 
@@ -105,13 +106,13 @@ export default async function TodaysActivityForSymbol({
   const isHistorical = Boolean(day) && day !== availableDates[0];
 
   const today = tradingDay();
-  const dateOptions: DateOption[] = availableDates.map((d) => ({
-    key: d,
-    label: d === today ? "Today" : formatDay(d),
-    href: `/todays-activity/${symbol}${d === availableDates[0] ? "" : `?date=${d}`}`,
-    current: d === activity.sessionDay,
-  }));
-  const dateLabel = activity.sessionDay === today ? "Today" : formatDay(activity.sessionDay);
+  const dateOptions = buildActivityDateOptions(
+    availableDates,
+    activity.sessionDay,
+    today,
+    (d) => `/todays-activity/${symbol}${d === availableDates[0] ? "" : `?date=${d}`}`,
+  );
+  const dateLabel = activityDateLabel(activity.sessionDay, today);
 
   return (
     <div className="page-enter flex flex-col gap-10 pb-10">
