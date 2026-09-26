@@ -29,13 +29,13 @@ export default function NotFound() {
           // a STATE, and state in this world is translucent.
           className="rounded-full bg-primary-fill px-4 py-2 text-sm font-semibold text-white shadow-[var(--elev-1)] transition-colors hover:bg-primary-fill-hover"
         >
-          Go to Home
+          Go to Market
         </Link>
         <Link
-          href="/todays-activity"
+          href="/stocks"
           className="panel-control px-4 py-2 text-sm font-semibold text-ink"
         >
-          Browse today&apos;s story
+          Browse the Stocks list
         </Link>
       </div>
     </div>

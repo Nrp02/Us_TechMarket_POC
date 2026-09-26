@@ -18,11 +18,24 @@ import { SHORTCUTS } from "@/components/keyboard-shortcuts";
 // accent is already allowed to mark.
 type IconProps = { active?: boolean };
 
-function HomeIcon({ active }: IconProps) {
+// A jagged line — the same shape as the sparklines this page is full of, so
+// the nav item looks like the thing it leads to (the whole market's
+// movement) instead of a generic gauge or bar-chart mark.
+function MarketIcon({ active }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 1.75 : 1.5} strokeLinecap="round" strokeLinejoin="round" className="size-[18px]" aria-hidden>
-      <path d="M4.5 11 12 4.5 19.5 11" />
-      <path d="M6.5 9.5V19a1 1 0 0 0 1 1H10v-5.5h4V20h2.5a1 1 0 0 0 1-1V9.5" />
+      <path d="M3 14 7 7 10 17 14 5 17 13 21 9" />
+    </svg>
+  );
+}
+
+// A simple table — a header row over two body rows — for the page that is,
+// unadorned, the full Top-20 table.
+function StocksIcon({ active }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 1.75 : 1.5} strokeLinecap="round" strokeLinejoin="round" className="size-[18px]" aria-hidden>
+      <rect x="4.5" y="4.5" width="15" height="15" rx="1.5" />
+      <path d="M4.5 9.5h15M9.5 9.5V19.5" />
     </svg>
   );
 }
@@ -40,36 +53,10 @@ function NewsIcon({ active }: IconProps) {
   );
 }
 
-// A jagged line rather than a generic gauge or bar-chart mark — the same
-// shape as the sparklines this page is full of, so the nav item looks like
-// the thing it leads to instead of a stock "activity" glyph.
-function ActivityIcon({ active }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 1.75 : 1.5} strokeLinecap="round" strokeLinejoin="round" className="size-[18px]" aria-hidden>
-      <path d="M3 14 7 7 10 17 14 5 17 13 21 9" />
-    </svg>
-  );
-}
-
-// `phonePrefix` is the half of a label that is dropped below 600px. Only one
-// item has one, and it is the reason the card wraps to two rows on a phone:
-// this label is the longest of the three, so dropping the prefix on a phone is
-// what keeps the row on one line at narrow widths. The label used to read
-// "Today's Activity" / "Activity" — CLAUDE.md's rename note explains why the
-// visible text changed to "Today's Story" / "Story" while the URL, file names
-// and keyboard shortcut all stayed put.
-//
-// Split as a prefix rather than as a second `shortLabel` string so the two
-// spellings cannot drift: there is one label, and a phone shows the tail of it.
 const NAV_ITEMS = [
-  { href: "/", label: "Home", icon: HomeIcon },
+  { href: "/", label: "Market", icon: MarketIcon },
+  { href: "/stocks", label: "Stocks", icon: StocksIcon },
   { href: "/news", label: "News", icon: NewsIcon },
-  {
-    href: "/todays-activity",
-    phonePrefix: "Today's ",
-    label: "Story",
-    icon: ActivityIcon,
-  },
 ] as const;
 
 // The shortcut list is imported rather than restated so the hint printed on a
@@ -264,25 +251,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
                 }`}
               >
                 <Icon active={isActive} />
-                {/* One span, not two flex items. The prefix and the label were
-                    siblings of the row's `gap-2.5`, so an anonymous flex item
-                    formed around the bare "Activity" text node and the gap
-                    landed INSIDE the label: "Today's" and "Activity" sat 10px
-                    plus a word space apart, which read as a typesetting fault
-                    on the widest item in the card. Wrapped, the gap separates
-                    icon from label — its one job — and the space between the
-                    two words is the trailing space in phonePrefix. */}
-                <span>
-                  {/* Hidden rather than removed, so the accessible name on a
-                      laptop is still the full "Today's Story" that the nav
-                      has always announced. */}
-                  {"phonePrefix" in item && (
-                    <span className="hidden min-[600px]:inline">
-                      {item.phonePrefix}
-                    </span>
-                  )}
-                  {item.label}
-                </span>
+                <span>{item.label}</span>
               </Link>
             );
           })}

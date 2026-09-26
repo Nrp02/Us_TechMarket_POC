@@ -40,10 +40,10 @@ const HEADINGS = [
   "Chart (Day)",
 ];
 
-export function WatchlistTable({ tickers }: { tickers: Ticker[] }) {
+export function StocksTable({ tickers }: { tickers: Ticker[] }) {
   return (
     <section>
-      <SectionHeading>My Watchlist</SectionHeading>
+      <SectionHeading>Stocks</SectionHeading>
 
       {/* Below 600px this table is not a table any more — see the list under
           it. Hidden rather than left to scroll: 746px of min-content inside a
