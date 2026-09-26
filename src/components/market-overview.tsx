@@ -4,7 +4,9 @@ import { formatChange, formatPercent } from "@/lib/format";
 import type { Ticker } from "@/lib/queries";
 import { INDEX_CARDS } from "@/lib/symbols";
 
-// Five cards, one per index.
+// One card per INDEX_CARDS entry (5 index proxies + SOXX, the semiconductor
+// sub-sector proxy added in the Market Story pivot — grid grows to 6 columns
+// at xl accordingly, whatever INDEX_CARDS' own length is).
 //
 // This reverses an earlier pass, which merged these into a single divided band
 // on the argument that five equal plates read as a template rather than as a
@@ -20,8 +22,11 @@ import { INDEX_CARDS } from "@/lib/symbols";
 // object with its own edge, shadow and slice of the atmosphere behind it, and
 // the row reads as five instruments rather than five slots in a template.
 //
-// Wrapping is unchanged at 1 -> 2 -> 3 -> 5, so nothing regresses on an iPad; a
-// single non-wrapping row would force horizontal scrolling below 1280. What
+// Wrapping is 1 -> 2 -> 3 -> 6 (was -> 5 before SOXX), so nothing regresses on
+// an iPad; a single non-wrapping row would force horizontal scrolling below
+// 1280. The xl step was not re-measured against the 6th card the way the
+// original 5-card breakpoints below were — worth a real measurement pass if
+// this is revisited. What
 // went with the band is the -1px grid offset and the clipping wrapper it
 // needed: each card now draws its own border on all four sides, which is the
 // `panel` utility's job and no longer this component's.
@@ -109,7 +114,7 @@ export function MarketOverview({ tickers }: { tickers: Ticker[] }) {
           width a spanned card won; with nothing spanning, the trace goes back
           to the same max-w-[100px] every other card uses, and the mechanism
           leaves with the problem it was invented for. */}
-      <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-6">
         {INDEX_CARDS.map((card) => {
           const ticker = bySymbol.get(card.symbol);
 

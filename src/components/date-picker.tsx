@@ -40,8 +40,8 @@ export function DatePicker({
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  // Only referenced while the list is rendered — see the note on menuId in
-  // use-watchlist-menu.ts for why it is not set unconditionally.
+  // Only referenced while the list is rendered, not set unconditionally —
+  // same reasoning symbol-switcher.tsx's own menuId follows.
   const listId = useId();
 
   const close = (restoreFocus = false) => {
@@ -82,8 +82,8 @@ export function DatePicker({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        // 44px on a touch pointer, unchanged on a mouse — the same floor the
-        // three watchlist menus take. See the note in use-watchlist-menu.ts.
+        // 44px on a touch pointer, unchanged on a mouse — the same
+        // pointer-coarse floor every other control in this product takes.
         className="panel-control flex w-fit items-center gap-2 px-4 py-2 text-sm font-semibold text-ink pointer-coarse:min-h-11"
       >
         {dateLabel}

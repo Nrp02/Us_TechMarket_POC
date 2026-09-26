@@ -1,3 +1,4 @@
+import { readMaybeOne, readRows } from "@/lib/db-read";
 import { generateJson, GroqRateLimitError } from "@/lib/groq";
 import { tradingDay } from "@/lib/market";
 import { buildMarketStoryInput, type MarketStoryInput } from "@/lib/market-story-input";
@@ -109,10 +110,15 @@ Return a JSON object with exactly these 8 keys, each a string:
    today." If it is empty, write exactly:
    "${NO_EVENTS}"
 
-6. "macroContext" — today's macro backdrop: any FRED release compared to its
-   prior reading, and whether today is a scheduled FOMC decision day. If
-   "macro" is "no macro data available" and today is not a decision day,
-   write exactly:
+6. "macroContext" — the macro backdrop this session sits in: any FRED
+   release compared to its prior reading, and whether today is a scheduled
+   FOMC decision day. CPI/GDP/unemployment release monthly or quarterly, so
+   "latest reading date" will almost never equal the trading day — always
+   state the release's own date rather than implying it landed today (e.g.
+   "CPI's August reading" or "as of {latest reading date}"), and never
+   describe a data point as "today's release" unless its date matches the
+   trading day exactly. If "macro" is "no macro data available" and today is
+   not a decision day, write exactly:
    "${NO_MACRO}"
 
 7. "volatilityContext" — what the Volatility (VIXY) proxy and the day's
@@ -172,15 +178,26 @@ export type MarketStoryResult =
  * figures — defaulting to the clock would write today's date on numbers that
  * describe yesterday. Caught by a real spot-check: a first pass of this job
  * did exactly that in pre-market hours and had to be re-run after this fix.
+ *
+ * Through readRows rather than a bare `{ data }` destructure — this
+ * function exists specifically to not trust the clock over the data, so a
+ * swallowed read failure here would silently reintroduce the exact bug it
+ * was written to fix (falling back to tradingDay()). See CLAUDE.md's "A
+ * transient read was cached as 'no data'" for why a failed read must throw
+ * rather than degrade to an empty/default answer.
  */
 async function latestMarketSessionDay(): Promise<string> {
-  const { data } = await db
-    .from("intraday_snapshots")
-    .select("snapshot_at")
-    .order("snapshot_at", { ascending: false })
-    .limit(1);
-  const newest = data?.[0]?.snapshot_at as string | undefined;
-  return newest ? tradingDay(new Date(newest)) : tradingDay();
+  const rows = await readRows<{ snapshot_at: string }>(
+    "market-story:latest-session-day",
+    (signal) =>
+      db
+        .from("intraday_snapshots")
+        .select("snapshot_at")
+        .order("snapshot_at", { ascending: false })
+        .limit(1)
+        .abortSignal(signal),
+  );
+  return rows[0] ? tradingDay(new Date(rows[0].snapshot_at)) : tradingDay();
 }
 
 /**
@@ -198,11 +215,16 @@ async function latestMarketSessionDay(): Promise<string> {
  */
 export async function generateMarketStory(day?: string): Promise<MarketStoryResult> {
   const resolvedDay = day ?? (await latestMarketSessionDay());
-  const { data: existing } = await db
-    .from("market_stories")
-    .select("story_date")
-    .eq("story_date", resolvedDay)
-    .maybeSingle();
+  const existing = await readMaybeOne<{ story_date: string }>(
+    "market-story:existing",
+    (signal) =>
+      db
+        .from("market_stories")
+        .select("story_date")
+        .eq("story_date", resolvedDay)
+        .abortSignal(signal)
+        .maybeSingle(),
+  );
   if (existing) return { status: "already_done" };
 
   // getTickers, not a raw price_cache query: it already computes
@@ -214,9 +236,20 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   // claim against SessionDigest's, which reads real tickers and disagreed
   // with it on the same page. Never reconstruct a Ticker by hand elsewhere;
   // this is the one place that already does it right.
-  const [allTickers, { data: macroRows }, news] = await Promise.all([
+  const [allTickers, macroRows, news] = await Promise.all([
     getTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS]),
-    db.from("macro_indicators").select("series_id, latest_date, latest_value, prior_date, prior_value"),
+    readRows<{
+      series_id: string;
+      latest_date: string;
+      latest_value: number | null;
+      prior_date: string | null;
+      prior_value: number | null;
+    }>("market-story:macro", (signal) =>
+      db
+        .from("macro_indicators")
+        .select("series_id, latest_date, latest_value, prior_date, prior_value")
+        .abortSignal(signal),
+    ),
     loadMarketNews(resolvedDay),
   ]);
 
@@ -229,13 +262,22 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
     const ticker = bySymbol.get(card.symbol);
     return ticker ? [{ label: card.label, symbol: card.symbol, changePercent: ticker.changePercent }] : [];
   });
-  const macro = (macroRows ?? []).map((r) => ({
-    seriesId: r.series_id as string,
-    latestDate: r.latest_date as string,
-    latestValue: r.latest_value == null ? null : Number(r.latest_value),
-    priorDate: r.prior_date as string | null,
-    priorValue: r.prior_value == null ? null : Number(r.prior_value),
-  }));
+  // FOMC_DECISION_DAY is a stored boolean flag (refresh.ts), not a FRED
+  // economic reading — excluded here so it doesn't show up in the model's
+  // "macro" list looking like a bogus series value. The FOMC facts the
+  // prompt actually uses (input.fomc, below) come from the pure calendar
+  // check instead, same as before that row existed; the stored row exists
+  // only to satisfy ticket 02's "stores ... whether today was an FOMC
+  // decision day" as a persisted fact, not to feed this prompt.
+  const macro = macroRows
+    .filter((r) => r.series_id !== "FOMC_DECISION_DAY")
+    .map((r) => ({
+      seriesId: r.series_id,
+      latestDate: r.latest_date,
+      latestValue: r.latest_value == null ? null : Number(r.latest_value),
+      priorDate: r.prior_date,
+      priorValue: r.prior_value == null ? null : Number(r.prior_value),
+    }));
 
   const input = buildMarketStoryInput({ day: resolvedDay, top20, indices, macro, news });
   const prompt = buildPrompt(input);

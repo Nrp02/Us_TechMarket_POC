@@ -1,5 +1,6 @@
 import { hasReliableClose, reconcileClose } from "@/lib/closing-price";
 import { fetchLatestEarnings, fetchMetrics, fetchQuote } from "@/lib/finnhub";
+import { isFomcDay } from "@/lib/fomc-calendar";
 import { FRED_SERIES, fetchLatestTwo } from "@/lib/fred";
 import { tradingDay } from "@/lib/market";
 import { fetchFilings } from "@/lib/sec-edgar";
@@ -117,6 +118,24 @@ async function refreshMacroIndicators(): Promise<void> {
       // Left missing/stale; the next run's staleness check retries it.
     }
   }
+
+  // Whether today is a scheduled FOMC decision day, stored explicitly per
+  // the ticket's own acceptance criterion ("stores ... whether today was an
+  // FOMC decision day") rather than left as something only computed at read
+  // time. No upstream call (the calendar is hardcoded), so this is refreshed
+  // every tick regardless of staleness — cheap, and always correct for
+  // today. The "outcome" half of that criterion (whether the rate actually
+  // changed) is deliberately not duplicated into a second value here: it's
+  // already derivable by comparing this same tick's FEDFUNDS row, stored
+  // alongside it above.
+  rows.push({
+    series_id: "FOMC_DECISION_DAY",
+    latest_date: tradingDay(),
+    latest_value: isFomcDay(tradingDay()) ? 1 : 0,
+    prior_date: null,
+    prior_value: null,
+    updated_at: new Date().toISOString(),
+  });
 
   if (rows.length) {
     const { error } = await db.from("macro_indicators").upsert(rows, { onConflict: "series_id" });

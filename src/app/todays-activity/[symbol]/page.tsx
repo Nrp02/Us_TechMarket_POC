@@ -193,11 +193,9 @@ export default async function TodaysActivityForSymbol({
             left against nothing, which is what it looked like.
             
             Right-aligned is the intended arrangement rather than something to
-            abandon here: watchlist-table.tsx sets its mobile card up as "price
-            over change, right-aligned, mirroring the Today's Activity header",
-            so left-aligning this would break the shape that row was built to
-            match. Same trap as the news date picker — justify-between does
-            nothing for a lone item on a wrapped line. */}
+            abandon here — price over change, right-aligned, is this page's own
+            established shape for the pair. Same trap as the news date picker
+            — justify-between does nothing for a lone item on a wrapped line. */}
         <div className="col-start-2 flex flex-wrap items-center gap-x-2 gap-y-2 px-2 min-[680px]:col-start-3 min-[680px]:gap-x-5 min-[680px]:row-start-1 min-[680px]:px-0">
           {/* items-start on a phone: the price and the change sit on the
               column's axis like every other line in the header. items-end from
