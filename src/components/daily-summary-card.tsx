@@ -3,12 +3,13 @@ import { formatEtTime } from "@/lib/format";
 import type { DailySummary } from "@/lib/queries";
 
 // The AI Daily Summary — restored as its own section, separate from Today's
-// Story further down the page. The two answer different questions: Today's
-// Story's "What Happened Today" is a plain account of the session; this card
-// is the one place on the page that states, in one paragraph, what about the
-// day is actually worth a reader's attention. Written once by the end-of-day
-// Gemini job (daily-summary.ts) and stored — rendering this makes no AI call,
-// so two visitors reading the same stock cost nothing between them.
+// Story further down the page. The two answer different questions: this
+// card is a plain account of the session ("What Happened Today"); Today's
+// Story's own headline section is the one that states, in one paragraph,
+// what about the day is actually worth a reader's attention. Written once
+// by the end-of-day Gemini job (daily-summary.ts) and stored — rendering
+// this makes no AI call, so two visitors reading the same stock cost
+// nothing between them.
 //
 // Wrapped in the same SectionHeading every other block on this page uses
 // (flattened to independent top-level sections — see CLAUDE.md), rather than
@@ -26,7 +27,7 @@ export function DailySummaryCard({
       <SectionHeading
         meta={summary ? `Written after the close · ${formatEtTime(summary.generatedAt)}` : undefined}
       >
-        Worth Your Attention Today
+        What Happened Today
       </SectionHeading>
 
       {summary ? (
@@ -68,14 +69,6 @@ export function DailySummaryCard({
               </ul>
             )}
           </div>
-
-          <div className="mt-6 border-t border-hairline pt-4">
-            <p className="max-w-[52ch] text-xs leading-relaxed text-muted">
-              Written by AI from {symbol}&apos;s recorded prices, volume, news
-              and calendar for this session. It describes what happened — not
-              why, and not what happens next. Not investment advice.
-            </p>
-          </div>
         </div>
       ) : (
         // Explicit about what this section is for even before it has
@@ -83,7 +76,7 @@ export function DailySummaryCard({
         // should understand this is where the day's highlights will land,
         // not conclude the feature is broken or missing.
         <p className="panel p-5 text-sm text-body">
-          Worth Your Attention Today is written once per stock after the US
+          What Happened Today is written once per stock after the US
           market closes, highlighting what most deserves a reader&apos;s
           attention from {symbol}&apos;s session. Nothing has been generated
           for this session yet.

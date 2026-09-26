@@ -39,7 +39,18 @@ export function ComparisonBars({
     { label: "Peer avg.", value: peerAverage },
   ];
 
-  const maxAbs = Math.max(1, ...rows.map((r) => (r.value == null ? 0 : Math.abs(r.value))));
+  const values = rows.map((r) => r.value).filter((v): v is number => v != null);
+  const maxAbs = Math.max(1, ...values.map((v) => Math.abs(v)));
+  // A zero-centred, half-scale track only earns its keep when the four
+  // figures actually straddle zero — that's the case it exists to show.
+  // Four figures moving the same direction is the common case (a stock, its
+  // sector, the market and its peers often move together), and forcing that
+  // through a bidirectional scale leaves the entire opposite half of every
+  // row's track empty — on this card's now-doubled chart width, that read as
+  // a broken or half-drawn bar rather than as "nothing negative today".
+  // Falling back to a plain 0–100% magnitude bar spends the whole track
+  // instead, with sign still carried by colour and the signed value beside it.
+  const diverging = values.some((v) => v > 0) && values.some((v) => v < 0);
 
   return (
     <div
@@ -53,15 +64,17 @@ export function ComparisonBars({
     >
       {rows.map((row) => {
         const t = tone(row.value);
-        const widthPercent = row.value == null ? 0 : (Math.abs(row.value) / maxAbs) * 50;
+        const magnitudePercent = row.value == null ? 0 : (Math.abs(row.value) / maxAbs) * 100;
         return (
           <div key={row.label} className="flex items-center gap-2 text-xs">
             <span className="w-20 shrink-0 text-muted">{row.label}</span>
             <div className="relative h-2.5 flex-1 rounded-full bg-surface-soft">
-              <span
-                aria-hidden
-                className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-hairline"
-              />
+              {diverging && (
+                <span
+                  aria-hidden
+                  className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-hairline"
+                />
+              )}
               {row.value != null && (
                 <span
                   aria-hidden
@@ -69,9 +82,11 @@ export function ComparisonBars({
                     t === "up" ? "bg-semantic-up" : "bg-semantic-down"
                   }`}
                   style={
-                    row.value >= 0
-                      ? { left: "50%", width: `${widthPercent}%` }
-                      : { right: "50%", width: `${widthPercent}%` }
+                    diverging
+                      ? row.value >= 0
+                        ? { left: "50%", width: `${magnitudePercent / 2}%` }
+                        : { right: "50%", width: `${magnitudePercent / 2}%` }
+                      : { left: 0, width: `${magnitudePercent}%` }
                   }
                 />
               )}
@@ -82,6 +97,73 @@ export function ComparisonBars({
               }`}
             >
               {row.value == null ? "—" : formatPercent(row.value)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A variable-length counterpart to ComparisonBars, for Market Story's two
+ * "who led/lagged" sections (Standout Movers, Sector Leadership) — same
+ * zero-centred diverging track when the rows straddle zero (the ordinary
+ * case for a set of movers or sectors, unlike ComparisonBars' four fixed
+ * rows which are often all one sign), same fallback to a plain 0-100%
+ * magnitude bar when they don't. Kept separate from ComparisonBars rather
+ * than generalising that one in place: ComparisonBars' rows can be `null`
+ * ("not available"), these can't — every mover/sector row here already has
+ * a real figure by construction, and folding an unused null case back in
+ * would cost every reader of that component a branch for nothing.
+ */
+export function RankedBars({
+  rows,
+  ariaLabel,
+}: {
+  rows: { label: string; value: number }[];
+  ariaLabel: string;
+}) {
+  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.value)));
+  const diverging = rows.some((r) => r.value > 0) && rows.some((r) => r.value < 0);
+
+  return (
+    <div className="flex flex-col gap-2.5" role="img" aria-label={ariaLabel}>
+      {rows.map((row) => {
+        const t = tone(row.value);
+        const magnitudePercent = (Math.abs(row.value) / maxAbs) * 100;
+        return (
+          <div key={row.label} className="flex items-center gap-2 text-xs">
+            <span className="w-24 shrink-0 truncate text-muted" title={row.label}>
+              {row.label}
+            </span>
+            <div className="relative h-2.5 flex-1 rounded-full bg-surface-soft">
+              {diverging && (
+                <span
+                  aria-hidden
+                  className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-hairline"
+                />
+              )}
+              <span
+                aria-hidden
+                className={`absolute inset-y-0 rounded-full ${
+                  t === "up" ? "bg-semantic-up" : "bg-semantic-down"
+                }`}
+                style={
+                  diverging
+                    ? row.value >= 0
+                      ? { left: "50%", width: `${magnitudePercent / 2}%` }
+                      : { right: "50%", width: `${magnitudePercent / 2}%` }
+                    : { left: 0, width: `${magnitudePercent}%` }
+                }
+              />
+            </div>
+            <span
+              className={`w-14 shrink-0 text-right font-mono tabular-nums ${
+                t === "up" ? "text-semantic-up" : "text-semantic-down"
+              }`}
+            >
+              {formatPercent(row.value)}
             </span>
           </div>
         );

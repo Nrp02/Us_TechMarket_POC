@@ -70,7 +70,7 @@ export type StoryGenerationResult = {
   failed: string[];
 };
 
-type PriceRow = {
+export type PriceRow = {
   symbol: string;
   price: number;
   change: number;
@@ -109,6 +109,17 @@ type GroqModel = {
   peerSectorRelation: string;
   ytdTakeaway: string;
 };
+
+/** Every string-valued key `GroqModel` must carry — `headline.text` is checked separately, since it's nested. */
+const REQUIRED_STRING_KEYS = [
+  "comparison",
+  "classification",
+  "unusualness",
+  "explanation",
+  "fundamentals",
+  "peerSectorRelation",
+  "ytdTakeaway",
+] as const satisfies readonly (keyof GroqModel)[];
 
 /** Exact wording required when the given data doesn't support even an inferred read. */
 const NO_EXPLANATION =
@@ -398,7 +409,15 @@ async function loadFilings(symbol: string, day: string): Promise<StorySecFiling[
   }));
 }
 
-async function generateOneStory(
+/**
+ * Exported (was module-private) so a one-off manual regeneration script can
+ * call the exact same pipeline `generateStories` uses per symbol, without
+ * going through its price-freshness gate — useful for re-running a single
+ * stock whose stored story came out thin/degenerate without touching the
+ * others. Not called from any route; `generateStories` is still the only
+ * scheduled entry point.
+ */
+export async function generateOneStory(
   symbol: string,
   day: string,
   prices: Map<string, PriceRow>,
@@ -460,6 +479,20 @@ async function generateOneStory(
     reasoningEffort: REASONING_EFFORT,
     maxCompletionTokens: MAX_COMPLETION_TOKENS,
   });
+
+  // Groq's response_format:json_object only guarantees valid JSON, not that
+  // every requested key is present — a call can return a syntactically
+  // complete object holding just one of the 8 keys (observed live: AMD
+  // 2026-09-25 stored a sections row containing only "headline"). Without
+  // this check that partial object gets upserted as a finished story, which
+  // permanently blocks the retry path since `done` treats any existing row
+  // as complete. Fail loudly instead so the caller's catch routes this
+  // symbol into `failed` and a later scheduled run retries it.
+  const missingKeys: string[] = REQUIRED_STRING_KEYS.filter((key) => typeof data[key] !== "string");
+  if (typeof data.headline?.text !== "string") missingKeys.push("headline.text");
+  if (missingKeys.length > 0) {
+    throw new Error(`${symbol}: Groq response missing section(s): ${missingKeys.join(", ")}`);
+  }
 
   const pickedNews =
     data.headline.newsIndex != null && news[data.headline.newsIndex]

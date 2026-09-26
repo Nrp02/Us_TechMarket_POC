@@ -6,9 +6,11 @@ import { SessionDigest } from "@/components/session-digest";
 import { activityDateLabel, buildActivityDateOptions, resolveActivityDay } from "@/lib/activity-date";
 import { formatDayLong } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
+import { computeSectorAverages, computeTopMovers } from "@/lib/market-breadth";
 import {
   getActivityDates,
   getDayTickers,
+  getIndexDailyCloses,
   getMarketStory,
   getNewsTeaser,
   getSessionStamp,
@@ -49,15 +51,23 @@ export default async function Market({
   // News is not date-scoped here — the teaser's own job is "most recent 3,
   // whatever day" regardless of which session the figures above it show (same
   // reasoning getNewsTeaser's doc comment already states).
-  const [all, news, session, marketStory] = await Promise.all([
+  const [all, news, session, marketStory, indexDailyCloses] = await Promise.all([
     day ? getDayTickers(allSymbols, day) : getTickers(allSymbols),
     getNewsTeaser(3),
     getSessionStamp(),
     getMarketStory(currentDay),
+    getIndexDailyCloses(currentDay),
   ]);
   const bySymbol = new Map(all.map((t) => [t.symbol, t]));
   const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
   const top20 = TOP_20_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
+
+  // Market Story's charts read the exact same aggregates the Groq prompt was
+  // built from (see market-story-generation.ts's buildPrompt) — computed
+  // here rather than fetched, so a chart and the sentence beside it can
+  // never disagree about a number.
+  const topMovers = computeTopMovers(top20);
+  const sectorAverages = computeSectorAverages(top20);
 
   const dateOptions = buildActivityDateOptions(availableDates, currentDay, today, (d) =>
     d === availableDates[0] ? "/" : `/?date=${d}`,
@@ -79,7 +89,13 @@ export default async function Market({
 
       <MarketOverview tickers={indices} />
 
-      <MarketStory story={marketStory} />
+      <MarketStory
+        story={marketStory}
+        topMovers={topMovers}
+        sectorAverages={sectorAverages}
+        indices={indices}
+        indexDailyCloses={indexDailyCloses}
+      />
 
       {/* Market News runs full width, its three articles in a row rather than
           a column. */}

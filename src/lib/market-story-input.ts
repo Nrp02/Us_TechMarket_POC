@@ -12,7 +12,14 @@
 
 import { isFomcDay, mostRecentDecision } from "./fomc-calendar.ts";
 import { FRED_SERIES } from "./fred.ts";
-import { computeBreadth, computeSectorAverages, type SectorAverage } from "./market-breadth.ts";
+import {
+  computeBreadth,
+  computeSectorAverages,
+  computeTopMovers,
+  type SectorAverage,
+  type TopMover,
+} from "./market-breadth.ts";
+import { computeRangePosition, computeVolatilityPercentile, type RangeLabel } from "./volatility.ts";
 
 const SERIES_LABEL: Record<string, string> = {
   [FRED_SERIES.cpi]: "CPI (all urban consumers)",
@@ -36,22 +43,42 @@ export type MarketStoryMacroRow = {
   priorValue: number | null;
 };
 
+/** One daily_closes row for an index/sub-sector proxy — same shape story-generation.ts's loadDailyCloses already reads per stock, here loaded for all of INDEX_SYMBOLS in one query. */
+export type MarketStoryIndexClose = {
+  symbol: string;
+  tradingDay: string;
+  close: number;
+  changePercent: number | null;
+};
+
 export type MarketStoryInputParams = {
   day: string;
   /** The Top 20's own changePercent/significant — same Ticker fields computeBreadth/computeSectorAverages already read. */
   top20: { symbol: string; changePercent: number; significant: boolean }[];
-  /** INDEX_CARDS' own tickers (NASDAQ/S&P/Dow/Tech/Volatility/Semiconductors). */
-  indices: { label: string; symbol: string; changePercent: number }[];
+  /** INDEX_CARDS' own tickers (NASDAQ/S&P/Dow/Tech/Volatility/Semiconductors), plus today's price so a range position can be computed against indexDailyCloses. */
+  indices: { label: string; symbol: string; changePercent: number; price: number }[];
+  /** Each proxy's own trailing history (up to 370 days, daily_closes' own retention) — backs the same "how unusual vs. its own past year" read story-input.ts already gives individual stocks. */
+  indexDailyCloses: MarketStoryIndexClose[];
   /** Whatever macro_indicators currently holds — absent entirely before the first ingestion cycle. */
   macro: MarketStoryMacroRow[];
   news: MarketStoryNewsItem[];
+};
+
+export type MarketStoryIndex = {
+  label: string;
+  symbol: string;
+  changePercent: number;
+  volatilityPercentile: number | null;
+  rangePosition: number | null;
+  rangeLabel: RangeLabel | null;
 };
 
 export type MarketStoryInput = {
   day: string;
   breadth: ReturnType<typeof computeBreadth>;
   sectorAverages: SectorAverage[];
-  indices: { label: string; symbol: string; changePercent: number }[];
+  indices: MarketStoryIndex[];
+  topMovers: { gainers: TopMover[]; losers: TopMover[] };
   macro: {
     seriesLabel: string;
     latestDate: string;
@@ -64,13 +91,33 @@ export type MarketStoryInput = {
 };
 
 export function buildMarketStoryInput(params: MarketStoryInputParams): MarketStoryInput {
-  const { day, top20, indices, macro, news } = params;
+  const { day, top20, indices, indexDailyCloses, macro, news } = params;
+
+  const topMovers = computeTopMovers(top20);
+
+  const indicesWithVolatility: MarketStoryIndex[] = indices.map((index) => {
+    const closes = indexDailyCloses.filter((row) => row.symbol === index.symbol);
+    // Today's own row (if already stored) must not count as history for its own percentile rank — same guard story-input.ts applies per stock.
+    const historicalChangePercents = closes
+      .filter((row) => row.tradingDay !== day && row.changePercent !== null)
+      .map((row) => row.changePercent as number);
+    const rangePosition = computeRangePosition(index.price, closes.map((row) => row.close));
+    return {
+      label: index.label,
+      symbol: index.symbol,
+      changePercent: index.changePercent,
+      volatilityPercentile: computeVolatilityPercentile(index.changePercent, historicalChangePercents),
+      rangePosition: rangePosition.position,
+      rangeLabel: rangePosition.label,
+    };
+  });
 
   return {
     day,
     breadth: computeBreadth(top20),
     sectorAverages: computeSectorAverages(top20),
-    indices,
+    indices: indicesWithVolatility,
+    topMovers,
     macro: macro.map((row) => ({
       seriesLabel: SERIES_LABEL[row.seriesId] ?? row.seriesId,
       latestDate: row.latestDate,

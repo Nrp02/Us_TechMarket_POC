@@ -68,6 +68,19 @@ test("computeSectorAverages groups by sector and averages within it", () => {
   assert.equal(hardware?.count, 1);
 });
 
+test("computeSectorAverages' per-stock breakdown is sorted highest change first", () => {
+  const averages = computeSectorAverages([
+    { symbol: "NVDA", changePercent: 2 },
+    { symbol: "AMD", changePercent: 4 },
+    { symbol: "AVGO", changePercent: -1 },
+  ]);
+  const semis = averages.find((a) => a.sector === "Semiconductors");
+  assert.deepEqual(
+    semis?.stocks.map((s) => s.symbol),
+    ["AMD", "NVDA", "AVGO"],
+  );
+});
+
 test("a symbol outside SECTOR_BY_SYMBOL is skipped, not fabricated a sector", () => {
   const averages = computeSectorAverages([{ symbol: "QQQ", changePercent: 5 }]);
   assert.deepEqual(averages, []);

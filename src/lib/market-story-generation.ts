@@ -1,11 +1,15 @@
 import { readMaybeOne, readRows } from "@/lib/db-read";
 import { generateJson, GroqRateLimitError } from "@/lib/groq";
 import { tradingDay } from "@/lib/market";
-import { buildMarketStoryInput, type MarketStoryInput } from "@/lib/market-story-input";
-import { getTickers } from "@/lib/queries";
+import {
+  buildMarketStoryInput,
+  type MarketStoryIndexClose,
+  type MarketStoryInput,
+} from "@/lib/market-story-input";
+import { getDayTickers, getTickers } from "@/lib/queries";
 import { db } from "@/lib/supabase";
 import { INDEX_CARDS, INDEX_SYMBOLS, TOP_20_SYMBOLS } from "@/lib/symbols";
-import { ANALYSIS_GUIDELINE } from "@/lib/story-guideline";
+import { MARKET_ANALYSIS_GUIDELINE } from "@/lib/market-story-guideline";
 
 // The end-of-day Market Story job — the whole-market counterpart to
 // story-generation.ts, mirroring its shape exactly (one Groq call, same
@@ -50,15 +54,25 @@ function buildPrompt(input: MarketStoryInput): string {
       "total tracked": input.breadth.total,
       "cleared the Significant Movement rule": input.breadth.significantCount,
     },
+    "biggest movers among the tracked Top 20 stocks today": {
+      "gainers, largest first": input.topMovers.gainers.map((m) => `${m.symbol} ${percentOrNull(m.changePercent)}`),
+      "losers, largest first": input.topMovers.losers.map((m) => `${m.symbol} ${percentOrNull(m.changePercent)}`),
+    },
     "index and sub-sector proxies": input.indices.map((i) => ({
       label: i.label,
       symbol: i.symbol,
       "percent change today": percentOrNull(i.changePercent),
+      "how unusual vs. its own past year (percentile of |daily moves|; higher = more unusual)":
+        i.volatilityPercentile == null ? "not available" : `${i.volatilityPercentile.toFixed(0)}th percentile`,
+      "position in its own trailing ~52-week range": i.rangeLabel ?? "not available",
     })),
     "sector averages (mean percent change of the Top 20 stocks in each sector)": input.sectorAverages.map((s) => ({
       sector: s.sector,
       "average percent change": percentOrNull(s.averageChangePercent),
       "stocks in this sector tracked": s.count,
+      "each stock's own percent change today, highest first": s.stocks.map(
+        (st) => `${st.symbol} ${percentOrNull(st.changePercent)}`,
+      ),
     })),
     macro: input.macro.length
       ? input.macro.map((m) => ({
@@ -89,7 +103,7 @@ backdrop it sat in.
 All figures below are already computed. Copy each one exactly as written —
 never restate a number in another form, and never work out a new one.
 
-${ANALYSIS_GUIDELINE}
+${MARKET_ANALYSIS_GUIDELINE}
 
 Return a JSON object with exactly these 8 keys, each a string:
 
@@ -97,11 +111,15 @@ Return a JSON object with exactly these 8 keys, each a string:
    overview: the overall tape's direction and scale, using the breadth and
    index figures.
 
-2. "standoutMovers" — which index or sub-sector proxy moved most, and by how
-   much, using the "index and sub-sector proxies" figures.
+2. "standoutMovers" — which index/sub-sector proxy AND which individual Top
+   20 stock(s) moved most today, using the "index and sub-sector proxies"
+   figures and the "biggest movers among the tracked Top 20 stocks" figures —
+   name specific tickers, not just "some stocks."
 
 3. "sectorLeadership" — which sector led or lagged today, using the "sector
-   averages" figures — name the sector, not just "some sectors."
+   averages" figures — name the sector, not just "some sectors." Where a
+   sector's own per-stock breakdown shows one member diverging from the rest
+   of that sector, name it specifically rather than citing only the average.
 
 4. "breadth" — whether today's move was broad-based or concentrated, using
    the breadth figures (advancers/decliners/significant count) directly.
@@ -121,12 +139,17 @@ Return a JSON object with exactly these 8 keys, each a string:
    not a decision day, write exactly:
    "${NO_MACRO}"
 
-7. "volatilityContext" — what the Volatility (VIXY) proxy and the day's
-   breadth together say about how calm or turbulent the session was.
+7. "volatilityContext" — what the Volatility (VIXY) proxy's own move and its
+   "how unusual vs. its own past year" figure, together with the day's
+   breadth, say about how calm or turbulent the session was.
 
 8. "closingSynthesis" — a closing "today's market story" that connects at
    least two of the above (e.g. breadth with sector leadership, or macro
    context with volatility) — not a restatement of "overallRead."
+
+Length: keep "overallRead" to roughly 1-2 sentences. The other 7 sections
+have no sentence-count limit — write as much as the grounded reasoning
+actually needs, but never pad with restated numbers or a repeated conclusion.
 
 Further rules:
 - Every percent-change figure above already carries its own sign: a value
@@ -160,6 +183,28 @@ async function loadMarketNews(day: string) {
     summary: (row.news_summaries as unknown as { summary: string } | null)?.summary ?? null,
     sourceUrl: row.source_url as string,
     publishedAt: row.published_at as string,
+  }));
+}
+
+/**
+ * Every index/sub-sector proxy's own daily_closes history in one query
+ * (INDEX_SYMBOLS is 6 symbols), mirroring story-generation.ts's
+ * loadDailyCloses but batched across symbols rather than one call per
+ * symbol — this is a whole-market job, so it reads the whole set at once
+ * the same way loadMarketNews and the macro read already do.
+ */
+async function loadIndexDailyCloses(day: string): Promise<MarketStoryIndexClose[]> {
+  const { data, error } = await db
+    .from("daily_closes")
+    .select("symbol, trading_day, close, change_percent")
+    .in("symbol", INDEX_SYMBOLS)
+    .lte("trading_day", day);
+  if (error) throw new Error(`daily_closes read for indices: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    symbol: row.symbol as string,
+    tradingDay: row.trading_day as string,
+    close: Number(row.close),
+    changePercent: row.change_percent == null ? null : Number(row.change_percent),
   }));
 }
 
@@ -214,7 +259,18 @@ async function latestMarketSessionDay(): Promise<string> {
  * same as Today's Story), but has the same headroom to spend.
  */
 export async function generateMarketStory(day?: string): Promise<MarketStoryResult> {
-  const resolvedDay = day ?? (await latestMarketSessionDay());
+  const latestDay = await latestMarketSessionDay();
+  const resolvedDay = day ?? latestDay;
+  // A manually-triggered backfill for a day that isn't the current session:
+  // price_cache holds only the single latest snapshot per symbol, so reading
+  // it for an earlier day silently mislabels today's change% as that day's.
+  // Confirmed live: on 2026-09-26, price_cache's SPY change_percent (today's
+  // +0.54%) doesn't just differ in magnitude from 2026-09-22's real daily_closes
+  // change_percent (-0.02%) — the sign flips. getDayTickers is the same fix
+  // queries.ts already applies for Today's Activity's historical view
+  // (queries.ts:876-880) — same Ticker shape, sourced from daily_closes/
+  // intraday_snapshots instead of the live cache.
+  const isHistorical = resolvedDay !== latestDay;
   const existing = await readMaybeOne<{ story_date: string }>(
     "market-story:existing",
     (signal) =>
@@ -236,8 +292,10 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   // claim against SessionDigest's, which reads real tickers and disagreed
   // with it on the same page. Never reconstruct a Ticker by hand elsewhere;
   // this is the one place that already does it right.
-  const [allTickers, macroRows, news] = await Promise.all([
-    getTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS]),
+  const [allTickers, macroRows, news, indexDailyCloses] = await Promise.all([
+    isHistorical
+      ? getDayTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS], resolvedDay)
+      : getTickers([...TOP_20_SYMBOLS, ...INDEX_SYMBOLS]),
     readRows<{
       series_id: string;
       latest_date: string;
@@ -251,6 +309,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
         .abortSignal(signal),
     ),
     loadMarketNews(resolvedDay),
+    loadIndexDailyCloses(resolvedDay),
   ]);
 
   const bySymbol = new Map(allTickers.map((t) => [t.symbol, t]));
@@ -260,7 +319,9 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   });
   const indices = INDEX_CARDS.flatMap((card) => {
     const ticker = bySymbol.get(card.symbol);
-    return ticker ? [{ label: card.label, symbol: card.symbol, changePercent: ticker.changePercent }] : [];
+    return ticker
+      ? [{ label: card.label, symbol: card.symbol, changePercent: ticker.changePercent, price: ticker.price }]
+      : [];
   });
   // FOMC_DECISION_DAY is a stored boolean flag (refresh.ts), not a FRED
   // economic reading — excluded here so it doesn't show up in the model's
@@ -279,7 +340,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
       priorValue: r.prior_value == null ? null : Number(r.prior_value),
     }));
 
-  const input = buildMarketStoryInput({ day: resolvedDay, top20, indices, macro, news });
+  const input = buildMarketStoryInput({ day: resolvedDay, top20, indices, indexDailyCloses, macro, news });
   const prompt = buildPrompt(input);
 
   try {

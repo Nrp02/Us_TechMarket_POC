@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { SectionCard } from "@/components/section-card";
 import { SectionHeading } from "@/components/section-heading";
 import { ComparisonBars, RangeBar, YtdChart } from "@/components/story-charts";
 import { formatEtTime } from "@/lib/format";
@@ -18,32 +19,9 @@ import type { Activity } from "@/lib/queries";
 // Rendering this makes no AI call: the narrative was written once by the
 // Groq end-of-day job (story-generation.ts) and stored. Two visitors reading
 // the same stock cost nothing between them.
-
-function StoryBody({ text, chart }: { text: string; chart?: ReactNode }) {
-  const body = (
-    <p className="text-pretty font-serif text-base leading-relaxed text-ink">{text}</p>
-  );
-  if (!chart) return body;
-  return (
-    <div className="grid gap-4 min-[600px]:grid-cols-[minmax(0,1fr)_200px] min-[600px]:items-center min-[600px]:gap-6">
-      {body}
-      <div className="min-w-0">{chart}</div>
-    </div>
-  );
-}
-
-/**
- * A plain, unelevated card for one analytical section — the same `.panel`
- * base this page's numeric stat cards use (see activity-stats.tsx's Cell),
- * adapted for prose/chart content instead of a single figure.
- */
-function SectionCard({ text, chart }: { text: string; chart?: ReactNode }) {
-  return (
-    <div className="panel p-5 sm:p-6">
-      <StoryBody text={text} chart={chart} />
-    </div>
-  );
-}
+//
+// The text+chart card itself (SectionCard) is shared with Market Story —
+// see section-card.tsx.
 
 /** Undefined when there isn't a real trailing range to plot — never a flat line. */
 function rangeChart(dailyCloses: Activity["dailyCloses"], currentPrice: number): ReactNode {
@@ -74,7 +52,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
   if (!story) {
     return (
       <section>
-        <SectionHeading>What Happened Today</SectionHeading>
+        <SectionHeading>Worth Your Attention Today</SectionHeading>
         <p className="panel p-5 text-sm text-body">
           No story for this session yet. Today&apos;s Story is written once per
           stock after the US market closes.
@@ -87,7 +65,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
     <>
       <section>
         <SectionHeading meta={`Written after the close · ${formatEtTime(story.generatedAt)}`}>
-          What Happened Today
+          Worth Your Attention Today
         </SectionHeading>
         {/* Its own elevated card, distinct from the plain analytical cards
             below it — same corner wash this page's single panel used to
@@ -148,22 +126,28 @@ export function TodaysStory({ activity }: { activity: Activity }) {
             compared against") and duplicated each other. Display-level
             merge only: the underlying story.sections fields and the Groq
             prompt are unchanged, and the prompt's existing anti-redundancy
-            rule already discourages one section from restating another. */}
-        <div className="panel flex flex-col gap-4 p-5 sm:p-6">
-          <StoryBody
-            text={story.sections.comparison}
-            chart={
-              <ComparisonBars
-                stock={ticker.changePercent}
-                sector={sector?.changePercent ?? null}
-                market={market?.changePercent ?? null}
-                peerAverage={peers.peerAveragePercent}
-              />
-            }
-          />
-          <p className="text-pretty font-serif text-base leading-relaxed text-ink">
-            {story.sections.peerSectorRelation}
-          </p>
+            rule already discourages one section from restating another.
+            Both paragraphs stack in one left column against one right
+            column holding the chart — not per-paragraph pairing, which left
+            the second paragraph (no chart of its own) spanning the full
+            width and reading as if it had spilled into the chart's lane. */}
+        <div className="panel grid gap-6 p-5 sm:p-6 min-[600px]:grid-cols-2 min-[600px]:items-center">
+          <div className="flex flex-col gap-4">
+            <p className="text-pretty font-serif text-base leading-relaxed text-ink">
+              {story.sections.comparison}
+            </p>
+            <p className="text-pretty font-serif text-base leading-relaxed text-ink">
+              {story.sections.peerSectorRelation}
+            </p>
+          </div>
+          <div className="min-w-0">
+            <ComparisonBars
+              stock={ticker.changePercent}
+              sector={sector?.changePercent ?? null}
+              market={market?.changePercent ?? null}
+              peerAverage={peers.peerAveragePercent}
+            />
+          </div>
         </div>
       </section>
 

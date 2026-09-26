@@ -9,7 +9,7 @@ import { computePeerComparison, type PeerComparison } from "@/lib/peer-compariso
 import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
 import { isSignificant, relativeVolume, significanceScore } from "@/lib/significance";
 import { db } from "@/lib/supabase";
-import { NAME_BY_SYMBOL, PEERS, SECTOR_BY_SYMBOL } from "@/lib/symbols";
+import { INDEX_SYMBOLS, NAME_BY_SYMBOL, PEERS, SECTOR_BY_SYMBOL } from "@/lib/symbols";
 
 // Every Home page read comes from here. Nothing in this file calls an upstream
 // API — the tables are filled by lib/refresh.ts.
@@ -596,6 +596,46 @@ async function getDailyCloses(
   );
   return rows.map((row) => ({ tradingDay: row.trading_day, close: Number(row.close) }));
 }
+
+/**
+ * Every INDEX_SYMBOLS proxy's own daily_closes history in one query — the
+ * Market page's counterpart to getDailyCloses above, batched across the 6
+ * index/sub-sector symbols the same way market-story-generation.ts's
+ * loadIndexDailyCloses already batches it for the Groq job. Feeds Market
+ * Story's charts (VIXY's trailing range, SPY's YTD line) with the same rows
+ * buildMarketStoryInput uses to compute volatilityPercentile/rangePosition —
+ * kept on the payload raw, same "don't discard what a chart needs" reasoning
+ * getActivity already applies to a single stock's dailyCloses.
+ */
+async function getIndexDailyClosesUncached(
+  day: string,
+): Promise<{ symbol: string; tradingDay: string; close: number; changePercent: number | null }[]> {
+  const rows = await readRows<{
+    symbol: string;
+    trading_day: string;
+    close: number;
+    change_percent: number | null;
+  }>("index-daily-closes", (signal) =>
+    db
+      .from("daily_closes")
+      .select("symbol, trading_day, close, change_percent")
+      .in("symbol", INDEX_SYMBOLS)
+      .lte("trading_day", day)
+      .abortSignal(signal),
+  );
+  return rows.map((row) => ({
+    symbol: row.symbol,
+    tradingDay: row.trading_day,
+    close: Number(row.close),
+    changePercent: row.change_percent == null ? null : Number(row.change_percent),
+  }));
+}
+
+export const getIndexDailyCloses = unstable_cache(
+  getIndexDailyClosesUncached,
+  ["index-daily-closes"],
+  { revalidate: CACHE_SECONDS },
+);
 
 /** One session's intraday price and volume series for a symbol, oldest first. */
 async function getIntraday(

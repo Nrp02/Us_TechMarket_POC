@@ -9,7 +9,13 @@ const BASE_PARAMS = {
     { symbol: "NVDA", changePercent: 2, significant: false },
     { symbol: "AMD", changePercent: -1, significant: false },
   ],
-  indices: [{ label: "NASDAQ 100", symbol: "QQQ", changePercent: 0.5 }],
+  indices: [{ label: "NASDAQ 100", symbol: "QQQ", changePercent: 0.5, price: 500 }],
+  indexDailyCloses: [
+    { symbol: "QQQ", tradingDay: "2026-09-15", close: 495, changePercent: 0.3 },
+    { symbol: "QQQ", tradingDay: "2026-09-14", close: 490, changePercent: -0.2 },
+    // Today's own row, if already stored, must be excluded from its own percentile rank.
+    { symbol: "QQQ", tradingDay: "2026-09-16", close: 500, changePercent: 0.5 },
+  ],
   macro: [
     {
       seriesId: "CPIAUCSL",
@@ -33,6 +39,47 @@ test("a realistic scenario assembles every field, computed rather than passed th
   assert.equal(input.macro[0].seriesLabel, "CPI (all urban consumers)");
   assert.equal(input.fomc.isDecisionDayToday, true);
   assert.equal(input.news.length, 1);
+});
+
+test("topMovers ranks the Top 20 by changePercent, gainers and losers each largest-first", () => {
+  const input = buildMarketStoryInput({
+    ...BASE_PARAMS,
+    top20: [
+      { symbol: "NVDA", changePercent: 2, significant: false },
+      { symbol: "AMD", changePercent: -1, significant: false },
+      { symbol: "AAPL", changePercent: 5, significant: false },
+      { symbol: "MSFT", changePercent: -4, significant: false },
+      { symbol: "GOOGL", changePercent: 0.5, significant: false },
+      { symbol: "META", changePercent: -0.2, significant: false },
+    ],
+  });
+  // TOP_MOVERS_COUNT is 3: largest 3 gains, largest 3 losses.
+  assert.deepEqual(
+    input.topMovers.gainers.map((m) => m.symbol),
+    ["AAPL", "NVDA", "GOOGL"],
+  );
+  assert.deepEqual(
+    input.topMovers.losers.map((m) => m.symbol),
+    ["MSFT", "AMD", "META"],
+  );
+});
+
+test("an index's volatility percentile excludes its own today row, and range position uses today's price", () => {
+  const input = buildMarketStoryInput(BASE_PARAMS);
+  const qqq = input.indices.find((i) => i.symbol === "QQQ");
+  // |0.5| is the largest of the three historical magnitudes (0.3, 0.2) once
+  // today's own 0.5 row is excluded, so it beats both of them: 100th percentile.
+  assert.equal(qqq?.volatilityPercentile, 100);
+  // price 500 against a 490-500 range (including today's own close) is the high.
+  assert.equal(qqq?.rangeLabel, "near-high");
+});
+
+test("an index with no stored history yields null volatility/range rather than a crash", () => {
+  const input = buildMarketStoryInput({ ...BASE_PARAMS, indexDailyCloses: [] });
+  const qqq = input.indices.find((i) => i.symbol === "QQQ");
+  assert.equal(qqq?.volatilityPercentile, null);
+  assert.equal(qqq?.rangePosition, null);
+  assert.equal(qqq?.rangeLabel, null);
 });
 
 test("an unrecognized macro series id passes through as its own label rather than crashing", () => {
