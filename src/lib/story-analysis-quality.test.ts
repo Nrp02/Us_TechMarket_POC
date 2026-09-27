@@ -1,25 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validatePublishedFigures, analysisSchema, analysisContract, hasSuppliedPercent, runAllChecks } from "./story-analysis-quality.ts";
+import { validatePublishedFigures, analysisSchema, hasSuppliedPercent, runAllChecks, validateNoFlatMoves } from "./story-analysis-quality.ts";
 
 test("schema requests published prose without model self-attestation", () => {
-  const schema = analysisSchema(["explanation", "fundamentals"], true, ["news:7"]);
+  const schema = analysisSchema(["explanation", "fundamentals"], true, ["Chipmaker wins order"]);
   assert.deepEqual(schema.required, ["explanation", "fundamentals", "headline"]);
   assert.equal(schema.additionalProperties, false);
   assert.ok(!("analysisChecks" in schema.properties));
-  assert.deepEqual((schema.properties.headline as { properties: { newsId: { enum: unknown[] } } }).properties.newsId.enum, ["news:7", null]);
+  assert.deepEqual((schema.properties.headline as { properties: { sourceHeadline: { enum: unknown[] } } }).properties.sourceHeadline.enum, ["Chipmaker wins order", null]);
 });
 test("market schema scopes trend to volatility context", () => {
   const schema = analysisSchema(["closingSynthesis", "volatilityContext"]);
   assert.match((schema.properties.closingSynthesis as { description: string }).description, /Never mention recent trend/);
   assert.match((schema.properties.volatilityContext as { description: string }).description, /signed net window change/);
-});
-test("contract requires evidence comparisons rather than metadata", () => {
-  const contract = analysisContract(["marketEvents", "closingSynthesis"], ["closingSynthesis"]);
-  assert.ok(!contract.includes("performanceEvidence"));
-  assert.ok(!contract.includes("ytdTakeaway"));
-  assert.match(contract, /alternative/);
-  assert.match(contract, /unresolved/);
 });
 test("accepts exact figures and rejects invented or re-rounded percentages", () => {
   const prompt = "\nInput:\n" + JSON.stringify({ price: "+0.22%", peer: "+3.97%" });
@@ -46,4 +39,20 @@ test("runAllChecks reports every failing check, not just the first", () => {
     () => runAllChecks([() => { throw new Error("a"); }, () => {}, () => { throw new Error("b"); }]),
     { message: "a; b" },
   );
+});
+test("a nonzero named move is never flat", () => {
+  const moves = [{ names: ["AMD"], changePercent: 0.22 }, { names: ["TXN"], changePercent: 0.04 }];
+  assert.throws(() => validateNoFlatMoves({ peerSectorRelation: "AMD's flat move mirrors NVIDIA." }, moves), /AMD moved 0\.22%/);
+  assert.doesNotThrow(() => validateNoFlatMoves({ comparison: "AMD's small +0.22% gain; TXN was essentially flat." }, moves));
+  assert.doesNotThrow(() => validateNoFlatMoves({ comparison: "AMD rose while the index was flat." }, moves));
+  assert.throws(() => validateNoFlatMoves({ comparison: "AMD (+0.22%) was essentially unchanged." }, moves));
+});
+test("closingSynthesis schema asks for year-to-date, other market cards stay on today", () => {
+  const schema = analysisSchema(["overallRead", "closingSynthesis"]);
+  assert.match((schema.properties.closingSynthesis as { description: string }).description, /Year-to-date/);
+  assert.match((schema.properties.overallRead as { description: string }).description, /this session only/);
+});
+test("non-breaking and other Unicode dashes count as minus signs", () => {
+  assert.ok(hasSuppliedPercent("net window change of ‑5.03%", -5.03));
+  assert.ok(hasSuppliedPercent("down −5.03%", -5.03));
 });

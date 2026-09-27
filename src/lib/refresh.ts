@@ -76,20 +76,25 @@ const SEC_FILINGS_RETENTION_DAYS = 370;
 
 /** FRED's macro series update monthly at most; same "check first, fetch only if needed" shape as fundamentals above. */
 const MACRO_STALE_DAYS = 7;
+// DGS10 is published every business day; a week-old yield would misdescribe the session.
+const DAILY_MACRO_STALE_HOURS = 12;
+const DAILY_MACRO_SERIES: ReadonlySet<string> = new Set([FRED_SERIES.tenYearTreasury]);
 
 /**
- * One row per FRED series (CPI, unemployment, GDP, fed funds rate), refreshed
- * only when missing or stale. Market-wide, not per-symbol, so this runs once
+ * One row per FRED series (CPI, unemployment, GDP, fed funds rate, 10-year
+ * Treasury yield), refreshed only when missing or stale. Market-wide, not per-symbol, so this runs once
  * per refresh cycle rather than inside the per-symbol loop below. Its own
  * try/catch at the call site: a FRED outage must not fail the whole
  * ingestion job over a low-frequency secondary fetch.
  */
 async function refreshMacroIndicators(): Promise<void> {
   const { data: cached } = await db.from("macro_indicators").select("series_id, updated_at");
-  const staleCutoff = Date.now() - MACRO_STALE_DAYS * 24 * 60 * 60 * 1000;
+  const staleCutoff = (seriesId: string) => Date.now() - (DAILY_MACRO_SERIES.has(seriesId)
+    ? DAILY_MACRO_STALE_HOURS * 60 * 60 * 1000
+    : MACRO_STALE_DAYS * 24 * 60 * 60 * 1000);
   const fresh = new Set(
     (cached ?? [])
-      .filter((r) => new Date(r.updated_at as string).getTime() >= staleCutoff)
+      .filter((r) => new Date(r.updated_at as string).getTime() >= staleCutoff(r.series_id as string))
       .map((r) => r.series_id as string),
   );
 

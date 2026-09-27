@@ -1,5 +1,4 @@
 import { generateJson, GroqTransportError } from "./groq.ts";
-import { reviewStoryAnalysis } from "./story-analysis-review.ts";
 import { db } from "./supabase.ts";
 
 export class StoryAnalysisError extends Error {
@@ -19,12 +18,12 @@ function legacySchedulingIssue(issues: string): boolean {
 }
 
 /** A rejected answer stays pending, with feedback available on the next tick. */
-export async function generateReviewedAnalysis<T extends object>(
+export async function generateValidatedAnalysis<T extends object>(
   key: string, prompt: string, schema: Record<string, unknown>, validate: (data: T) => void,
 ): Promise<T> {
   const { data: prior, error } = await db.from("story_analysis_attempts").select("issues").eq("attempt_key", key).maybeSingle();
   if (error) throw new Error(`analysis feedback read: ${error.message}`);
-  const feedback = prior?.issues && !legacySchedulingIssue(prior.issues) ? `Previous attempt failed review. Correct these specific errors without inventing replacement facts:\n${prior.issues.slice(-1600)}\n\n` : "";
+  const feedback = prior?.issues && !legacySchedulingIssue(prior.issues) ? `Previous attempt failed validation. Correct these specific errors without inventing replacement facts:\n${prior.issues.slice(-1600)}\n\n` : "";
   let candidate: T | null = null;
   try {
     const requestPrompt = feedback ? prompt.replace("\nInput:\n", `\n${feedback}Input:\n`) : prompt;
@@ -35,21 +34,7 @@ export async function generateReviewedAnalysis<T extends object>(
     });
     const normalized = data;
     candidate = normalized;
-    let validationError: Error | null = null;
-    try { validate(normalized); } catch (error) {
-      validationError = error instanceof Error ? error : new Error(String(error));
-      if (/Missing analytical sections|Market Story missing section/.test(validationError.message)) throw validationError;
-    }
-    // Review a complete draft even when a numeric/scope check fails, so the
-    // next attempt gets the factual and reasoning defects together.
-    try { await reviewStoryAnalysis(prompt, normalized as Record<string, unknown>); }
-    catch (error) {
-      if (!validationError) throw error;
-      if (!schedulingFailure(error)) {
-        throw new Error(`${validationError.message}; ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    if (validationError) throw validationError;
+    validate(normalized);
     if (prior) {
       const { error } = await db.from("story_analysis_attempts").delete().eq("attempt_key", key);
       if (error) throw new Error(`analysis feedback clear: ${error.message}`);

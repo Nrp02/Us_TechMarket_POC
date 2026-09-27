@@ -11,24 +11,28 @@
 
 const BASE = "https://api.stlouisfed.org/fred/series/observations";
 
-/** FRED series IDs for the four indicators Market Story reads. */
+/** FRED series IDs Market Story reads. DGS10 is daily; the rest are monthly/quarterly. */
 export const FRED_SERIES = {
   cpi: "CPIAUCSL",
   unemployment: "UNRATE",
   gdp: "GDPC1",
   fedFundsRate: "FEDFUNDS",
+  tenYearTreasury: "DGS10",
 } as const;
 
 export type FredObservation = { date: string; value: number | null };
 
-/** Latest two observations for a series, newest first — enough to compare a release against its prior reading. */
+/**
+ * Latest two non-missing observations, newest first. Daily series such as DGS10
+ * mark market holidays with ".", so a few extra rows are read and skipped.
+ */
 export async function fetchLatestTwo(seriesId: string): Promise<FredObservation[]> {
   const key = process.env.FRED_API_KEY;
   if (!key) throw new Error("FRED_API_KEY is not configured");
 
   const url =
     `${BASE}?series_id=${encodeURIComponent(seriesId)}&api_key=${key}` +
-    `&file_type=json&sort_order=desc&limit=2`;
+    `&file_type=json&sort_order=desc&limit=6`;
   const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`FRED ${seriesId} -> ${res.status}`);
 
@@ -37,5 +41,5 @@ export async function fetchLatestTwo(seriesId: string): Promise<FredObservation[
     date: o.date,
     // FRED marks a missing observation as the literal string ".".
     value: o.value === "." ? null : Number(o.value),
-  }));
+  })).filter((o) => o.value !== null).slice(0, 2);
 }

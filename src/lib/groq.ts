@@ -102,7 +102,7 @@ export async function generateJson<T>(
 
   const choice = json.choices?.[0];
   if (choice?.finish_reason === "length") {
-    throw new Error("Groq completion exhausted its token budget; refusing partial analysis");
+    throw new Error(`Groq ${model} completion exhausted its token budget (${json.usage?.completion_tokens ?? "?"} tokens); refusing partial analysis`);
   }
   const text = choice?.message?.content;
   if (!text) {

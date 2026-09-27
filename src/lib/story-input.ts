@@ -85,6 +85,8 @@ export type StoryInputParams = {
   businessContext?: StoryNewsItem[];
   /** This symbol's own Form 8-K filing(s) dated today, if any — empty, not fabricated, when there are none. */
   secFilings: StorySecFiling[];
+  /** Latest FRED 10-year Treasury yield observed on or before the session; null when unavailable (e.g. historical replay). */
+  tenYearYield?: TenYearYield | null;
 };
 
 export type StoryInput = {
@@ -113,7 +115,11 @@ export type StoryInput = {
   /** Prior dated news/disclosures; not a same-day catalyst. */
   businessContext?: StoryNewsItem[];
   secFilings: StorySecFiling[];
+  /** Latest FRED 10-year Treasury yield observed on or before the session; null when unavailable (e.g. historical replay). */
+  tenYearYield?: TenYearYield | null;
 };
+
+export type TenYearYield = { latestDate: string; latestValue: number; priorDate: string | null; priorValue: number | null };
 
 export function buildStoryInput(params: StoryInputParams): StoryInput {
   const {
@@ -132,6 +138,7 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
     news,
     businessContext,
     secFilings,
+    tenYearYield,
   } = params;
 
   const divergence = computeDivergence(changePercent, sectorChangePercent, marketChangePercent);
@@ -178,5 +185,6 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
     news,
     businessContext,
     secFilings,
+    tenYearYield: tenYearYield ?? null,
   };
 }

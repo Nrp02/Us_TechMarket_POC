@@ -173,3 +173,9 @@ test("no results are ever free text — every field is a number or a value from 
     assert.ok(value.length < 30, `"${value}" reads like free text, not a fixed label`);
   }
 });
+
+test("10-year yield passes through, and is null rather than invented when absent", () => {
+  assert.equal(buildStoryInput(base).tenYearYield, null);
+  const y = { latestDate: "2026-09-24", latestValue: 5.18, priorDate: "2026-09-23", priorValue: 5.11 };
+  assert.deepEqual(buildStoryInput({ ...base, tenYearYield: y }).tenYearYield, y);
+});

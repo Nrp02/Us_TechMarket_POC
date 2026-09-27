@@ -2,41 +2,41 @@
 // Method: CFA Institute Standards V(A), V(B): reasonable basis, fact/opinion
 // distinction and limitations. These establish no numeric trading thresholds.
 // Source notes and live experiments: .scratch/narrative-audit/prompt-research.md.
-export const ANALYSIS_GUIDELINE = `Reasoning guideline:
-- First establish group/sector/market context, then explain the stock's residual.
-  Relative strength is not the same as a positive return. Name individual peers.
-  A nonzero return is not flat. Inspect which peers lift or lower the mean:
-  lagging a mean dominated by one outlier does not establish a stock-specific
-  drag when another close peer matches the stock.
-- Observation -> significance -> best-supported interpretation. Explain why a
-  relationship favors that account, rather than saying the values differ.
-- An outlier needs corroboration: volume, dated company news or business facts.
-  No corroboration means a descriptive outlier, not proven company strength.
-- Separate price patterns, plausible mechanisms and demonstrated causation.
-  Qualify an interpretation; do not substitute a generic disclaimer for it.
-  Standard financial relationships may explain a conditional channel, not
-  establish an unreported event, measured exposure or company-specific fact.
-- Company news naming the stock is not stronger evidence by itself than the
-  common backdrop. Positive demand news alone cannot explain negative relative
-  performance; keep that residual open without corroboration.
-- Prior commentary about ETF allocation is not evidence of today's stock flows.
-  Do not call it the most credible drag without session-specific corroboration.
-  It may fit the pattern as a hypothesis while common-group participation
-  explains the absolute direction and the relative lag remains unidentified.
-- Challenge the preferred account with a credible, input-grounded alternative.
-  Alternatives may be common-group participation vs company-specific evidence;
-  never invent a supply-chain problem, profit-taking or a motive as an alternative.
-- Business facts persist between releases. Reconcile quarterly vs TTM growth
-  with relative price performance. Prior dated news supplies continuing context.
-  Missing numerical snapshots do NOT mean no earnings were released or that
-  the business has no fundamentals. Never turn concentrated spending into
-  falling demand or a new deployment into recognized revenue without evidence.
-- Missing volume means unknown participation, not normal or low volume.
-  A small move near a high is not explained by its range position alone.
-  Range position is distance within min/max, not a percentile/rank among prices.
-- Each section adds a distinct inference. Today's unusualness does not imply
-  persistence. Recent Trend is backward-looking and belongs only in unusualness;
-  direction reads swing structure/latest leg, not the sign of net window change.
-  Null reversal age is unknown; two later sessions are required to confirm one.
-- End an explanation by identifying what your account covers and the specific
-  residual or business comparison that this record cannot resolve.`;
+export const ANALYSIS_GUIDELINE = `DEFINITIONS
+- Backdrop: what XLK, SPY and the named peers did today. Residual: what is
+  left of the stock's move after the backdrop.
+- Ahead/behind: compare signed returns. A peer that fell less than the stock
+  did better, not "lagged". Check every peer before writing "all" or "every".
+- Engine label: company-specific when |stock - SPY| >= 2 percentage points,
+  otherwise market-wide. A threshold, not a finding about cause.
+- Range position: distance within the trailing min/max, not a percentile.
+- Recent Trend: backward-looking swing structure. Direction comes from the
+  swings, not the sign of the net window change. Swing-point age counts days
+  since the swing bar; a reversal needs two later sessions to confirm.
+- Timing: news after this session's close cannot explain it; news from before
+  this session is continuing context, not a fresh event.
+- Missing data (fundamentals, relative volume) is unknown: never "no earnings
+  were released", never "normal" or "low" volume.
+
+METHOD
+1. Backdrop before residual. Check each named peer, not only the mean: an
+   outlier can move the mean while a close peer matches the stock.
+2. An explanation needs a dated source or a clear group pattern. A plausible
+   channel must be labelled as one; a cause the sources do not state must not
+   be asserted. Never state a motive, expectation, flow or positioning.
+3. Where a card makes a causal claim, weigh the strongest competing reading
+   from the same evidence and say what stays unresolved. A competing reading
+   is also bound by rule 2: no investor sentiment, skepticism or motive.
+   Any mechanism must point the way the price moved.
+4. Business facts persist between releases; old news is context. Price
+   strength is not business improvement.
+
+GOOD FORMS (shape only; never import these facts)
+- "AMD's +0.22% gain matched the stock, so the lag to the peer mean comes from
+  QCOM alone."
+- "Relative volume is unavailable, so participation is unknown and cannot
+  separate a stock-specific lag from ordinary variation."
+- "The gap clears the company-specific threshold, but a close peer fell almost
+  as far, so this reads as a group move."
+- "Stored growth figures are unavailable. The launch dated [date] is continuing
+  context; a market-pace move neither confirms nor rejects it."`;

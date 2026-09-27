@@ -107,7 +107,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
       </section>
 
       <section>
-        <SectionHeading>Company-Specific or Market-Wide</SectionHeading>
+        <SectionHeading>Company or Group Move</SectionHeading>
         <SectionCard text={story.sections.classification} />
       </section>
 

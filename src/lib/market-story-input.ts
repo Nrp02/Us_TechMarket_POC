@@ -23,12 +23,17 @@ import {
 } from "./market-breadth.ts";
 import { computeRangePosition, computeVolatilityPercentile, type RangeLabel } from "./volatility.ts";
 
+/** Series whose values are rates in percent; the prompt shows them with "%" so the figure check accepts them. */
+const PERCENT_SERIES: ReadonlySet<string> = new Set([FRED_SERIES.unemployment, FRED_SERIES.fedFundsRate, FRED_SERIES.tenYearTreasury]);
+
 const SERIES_LABEL: Record<string, string> = {
   [FRED_SERIES.cpi]: "CPI (all urban consumers)",
   [FRED_SERIES.unemployment]: "Unemployment rate",
   [FRED_SERIES.gdp]: "Real GDP",
   [FRED_SERIES.fedFundsRate]: "Fed funds rate",
+  [FRED_SERIES.tenYearTreasury]: "10-year Treasury yield (daily, percent; FRED often posts a day late)",
 };
+import { computePeriodPerformance, type PeriodPerformance } from "./period-performance.ts";
 
 export type MarketStoryNewsItem = {
   headline: string;
@@ -75,6 +80,8 @@ export type MarketStoryIndex = {
   rangePosition: number | null;
   rangeLabel: RangeLabel | null;
   recentTrend: RecentTrend;
+  /** YTD/MTD through today's price; closes after `day` never count (historical replay). */
+  periodPerformance: PeriodPerformance;
 };
 
 export type MarketStoryInput = {
@@ -87,6 +94,7 @@ export type MarketStoryInput = {
   topMovers: { gainers: TopMover[]; losers: TopMover[] };
   macro: {
     seriesLabel: string;
+    isPercent: boolean;
     latestDate: string;
     latestValue: number | null;
     priorDate: string | null;
@@ -116,6 +124,10 @@ export function buildMarketStoryInput(params: MarketStoryInputParams): MarketSto
       rangePosition: rangePosition.position,
       rangeLabel: rangePosition.label,
       recentTrend: computeRecentTrend(closes),
+      periodPerformance: computePeriodPerformance([
+        ...closes.filter((row) => row.tradingDay < day).map((row) => ({ tradingDay: row.tradingDay, close: row.close })),
+        { tradingDay: day, close: index.price },
+      ], day),
     };
   });
 
@@ -132,6 +144,7 @@ export function buildMarketStoryInput(params: MarketStoryInputParams): MarketSto
     topMovers,
     macro: macro.map((row) => ({
       seriesLabel: SERIES_LABEL[row.seriesId] ?? row.seriesId,
+      isPercent: PERCENT_SERIES.has(row.seriesId),
       latestDate: row.latestDate,
       latestValue: row.latestValue,
       priorDate: row.priorDate,

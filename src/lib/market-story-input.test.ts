@@ -177,3 +177,26 @@ test("no results are ever free text — every field is a number, a date, or a va
   assert.equal(typeof input.fomc.isDecisionDayToday, "boolean");
   assert.equal(typeof input.macro[0].seriesLabel, "string");
 });
+
+test("index YTD/MTD run to today's price and ignore closes after the session", () => {
+  const input = buildMarketStoryInput({
+    ...BASE_PARAMS,
+    indices: [{ label: "Technology", symbol: "XLK", changePercent: 1, price: 120 }],
+    indexDailyCloses: [
+      { symbol: "XLK", tradingDay: "2026-01-02", close: 100, changePercent: 0 },
+      { symbol: "XLK", tradingDay: "2026-09-01", close: 110, changePercent: 0 },
+      { symbol: "XLK", tradingDay: "2026-09-17", close: 999, changePercent: 0 },
+    ],
+  });
+  const { ytdPercent, mtdPercent } = input.indices[0].periodPerformance;
+  assert.ok(Math.abs(ytdPercent! - 20) < 1e-9);
+  assert.ok(Math.abs(mtdPercent! - 100 / 11) < 1e-9);
+});
+
+test("rate series are marked as percent; index-level series are not", () => {
+  const input = buildMarketStoryInput({ ...BASE_PARAMS, macro: [
+    ...BASE_PARAMS.macro,
+    { seriesId: "DGS10", latestDate: "2026-09-15", latestValue: 5.18, priorDate: "2026-09-14", priorValue: 5.11 },
+  ] });
+  assert.deepEqual(input.macro.map((m) => [m.isPercent, m.seriesLabel.startsWith("10-year")]), [[false, false], [true, true]]);
+});
