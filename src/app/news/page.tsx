@@ -200,7 +200,7 @@ export default async function News({
                 // whole filter and they measured 36px — the same gap the nav
                 // card closed for itself, on the control a phone visitor
                 // reaches for first.
-                className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition-colors pointer-coarse:min-h-11 ${
+                className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold press pointer-coarse:min-h-11 ${
                   isActive
                     ? "nav-active text-primary-active"
                     : "text-body hover:bg-glass-lift hover:text-ink"
@@ -225,7 +225,7 @@ export default async function News({
           <Link
             href={buildHref("stock", resolved.isAll ? "all" : resolved.date ?? undefined)}
             aria-current={!activeSector ? "page" : undefined}
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold press ${
               !activeSector
                 ? "nav-active text-primary-active"
                 : "text-body hover:bg-glass-lift hover:text-ink"
@@ -240,7 +240,7 @@ export default async function News({
                 sector: sectorOption,
               })}
               aria-current={activeSector === sectorOption ? "page" : undefined}
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold press ${
                 activeSector === sectorOption
                   ? "nav-active text-primary-active"
                   : "text-body hover:bg-glass-lift hover:text-ink"

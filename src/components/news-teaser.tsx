@@ -52,7 +52,7 @@ export function NewsTeaser({ items }: { items: NewsItem[] }) {
             key={item.id}
             // flex-col so the summary can push nothing around: cards in a row
             // are equal height by default and the headline lengths differ.
-            className="panel flex flex-col px-5 py-4 transition-colors hover:bg-surface-soft"
+            className="panel lift flex flex-col px-5 py-4"
           >
             {/* h3, not h2: this list sits under the "Market News" section
                 heading, which is the h2. Same structural-only fix as the News

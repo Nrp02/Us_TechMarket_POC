@@ -68,7 +68,7 @@ export function ComparisonBars({
         return (
           <div key={row.label} className="flex items-center gap-2 text-xs">
             <span className="w-20 shrink-0 text-muted">{row.label}</span>
-            <div className="relative h-2.5 flex-1 rounded-full bg-surface-soft">
+            <div className="relative h-2.5 flex-1 rounded-full well">
               {diverging && (
                 <span
                   aria-hidden
@@ -78,7 +78,7 @@ export function ComparisonBars({
               {row.value != null && (
                 <span
                   aria-hidden
-                  className={`absolute inset-y-0 rounded-full ${diverging && row.value < 0 ? "bar-declining" : "bar-advancing"} ${
+                  className={`lit-fill absolute inset-y-0 rounded-full ${diverging && row.value < 0 ? "bar-declining" : "bar-advancing"} ${
                     t === "up" ? "bg-semantic-up" : "bg-semantic-down"
                   }`}
                   style={
@@ -137,7 +137,7 @@ export function RankedBars({
             <span className="w-24 shrink-0 truncate text-muted" title={row.label}>
               {row.label}
             </span>
-            <div className="relative h-2.5 flex-1 rounded-full bg-surface-soft">
+            <div className="relative h-2.5 flex-1 rounded-full well">
               {diverging && (
                 <span
                   aria-hidden
@@ -146,7 +146,7 @@ export function RankedBars({
               )}
               <span
                 aria-hidden
-                className={`absolute inset-y-0 rounded-full ${diverging && row.value < 0 ? "bar-declining" : "bar-advancing"} ${
+                className={`lit-fill absolute inset-y-0 rounded-full ${diverging && row.value < 0 ? "bar-declining" : "bar-advancing"} ${
                   t === "up" ? "bg-semantic-up" : "bg-semantic-down"
                 }`}
                 style={
@@ -187,7 +187,7 @@ export function RangeBar({
   return (
     <div className="flex flex-col gap-2">
       <div
-        className="relative h-2.5 rounded-full bg-surface-soft"
+        className="relative h-2.5 rounded-full well"
         role="img"
         aria-label={`Trailing range from ${formatPrice(min)} to ${formatPrice(
           max,
@@ -195,7 +195,7 @@ export function RangeBar({
       >
         <span
           aria-hidden
-          className="chart-point absolute top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-canvas bg-primary"
+          className="lit-fill chart-point absolute top-1/2 size-3 -translate-y-1/2 rounded-full border-2 border-canvas bg-primary"
           style={{ left: `calc(${position * 100}% - 6px)` }}
         />
       </div>

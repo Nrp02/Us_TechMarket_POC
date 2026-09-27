@@ -50,6 +50,20 @@ export function ChartGradients() {
           />
         </linearGradient>
 
+        {/* The intraday volume column, lit from above like every other data
+            fill that stands proud of its panel (`lit-fill` in globals.css).
+            Per bar, not per chart: the default objectBoundingBox units put
+            the catch of light on each column's own top edge, which is where
+            the eye reads the bar's value. The top stop is --color-chart-bar
+            mixed 30% toward white, written as a literal because a presentation
+            attribute cannot evaluate color-mix(); the body is the token itself,
+            so the darkest pixel of every bar is still the colour measured at
+            3.99:1 against the panel, and contrast only rises from there. */}
+        <linearGradient id="volume-lit" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#a3afc4" />
+          <stop offset="35%" stopColor="var(--color-chart-bar)" />
+          <stop offset="100%" stopColor="var(--color-chart-bar)" />
+        </linearGradient>
         <linearGradient id="session-down" x1="0" y1="0" x2="0" y2="1">
           <stop
             offset="0%"

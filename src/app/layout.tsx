@@ -7,6 +7,7 @@ import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { Meteors } from "@/components/meteors";
 import { NightSky } from "@/components/night-sky";
 import { SessionMarker } from "@/components/session-marker";
+import { SkyInteraction } from "@/components/sky-interaction";
 import { TopBar } from "@/components/top-bar";
 import "./globals.css";
 
@@ -97,6 +98,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             no business shipping to the client — while the meteors need to know
             when a navigation happened. Two layers, one world. */}
         <Meteors />
+        {/* The pointer glow and the constellations. After the meteors so it
+            paints over them at the same depth, still behind every panel. */}
+        <SkyInteraction />
         {/* The nav is only 3 items, so this costs little on most visits —
             but it was still missing, on a codebase that otherwise author its
             own a11y fixes rather than skip them. First focusable element in

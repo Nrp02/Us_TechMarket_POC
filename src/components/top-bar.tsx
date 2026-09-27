@@ -249,7 +249,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
                 // reflow. Measured at 390px without it, "Today's Story"
                 // broke across two lines inside its own item and took the
                 // whole card from 62px to 82px to do it.
-                className={`flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-3 text-sm font-medium press ${
                   isActive
                     ? "nav-active text-primary-active"
                     : "text-body hover:bg-glass-lift hover:text-ink"

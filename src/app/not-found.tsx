@@ -28,7 +28,7 @@ export default function NotFound() {
           // documents as its one primary-action treatment. The News tabs lost
           // their identical fill in the same session because they were marking
           // a STATE, and state in this world is translucent.
-          className="rounded-full bg-primary-fill px-4 py-2 text-sm font-semibold text-white shadow-[var(--elev-1)] transition-colors hover:bg-primary-fill-hover"
+          className="rounded-full bg-primary-fill px-4 py-2 text-sm font-semibold text-white press shadow-[var(--elev-1)] hover:bg-primary-fill-hover active:shadow-[var(--depth-press)]"
         >
           Go to Market
         </Link>

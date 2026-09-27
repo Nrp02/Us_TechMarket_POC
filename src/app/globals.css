@@ -406,6 +406,84 @@
     rgb(150 190 255 / 0) 96px
   );
 
+  /* The lit rim's gradient. Every tier's ::before paints `var(--rim)`, and it
+     was painting nothing: this token was described above and referenced by the
+     shared ring rule, but never declared, so every panel shipped as a flat
+     translucent rectangle with no directional edge at all. Measured on the
+     built page before this pass — computed `background-image: none` on all
+     twenty panes on Home.
+
+     Light enters at the upper left, the same corner the clouds are lit from:
+     brightest on the top-left corner, gone by the middle of the pane, and a
+     last faint catch at the far corner where a real edge bounces. It is a 1px
+     band on the outer edge only, so it never sits under a glyph and moves no
+     text pair.
+
+     Three strengths, one per plane. The step between them is what says which
+     pane is nearer the viewer — the rim is the depth cue that survives with the
+     blur switched off, which it is on every tier for scroll cost. */
+  --edge-rim: linear-gradient(
+    135deg,
+    rgb(205 222 255 / 0.34) 0%,
+    rgb(150 190 255 / 0.12) 22%,
+    rgb(150 190 255 / 0) 48%,
+    rgb(150 190 255 / 0) 78%,
+    rgb(150 190 255 / 0.1) 100%
+  );
+  /* One plane nearer: the raised card, and any interactive card while it is
+     hovered or holds focus. */
+  --edge-rim-lit: linear-gradient(
+    135deg,
+    rgb(215 230 255 / 0.52) 0%,
+    rgb(150 190 255 / 0.2) 24%,
+    rgb(150 190 255 / 0) 52%,
+    rgb(150 190 255 / 0) 76%,
+    rgb(150 190 255 / 0.16) 100%
+  );
+  /* The shell sits behind the content, so its edge catches less. */
+  --edge-rim-quiet: linear-gradient(
+    135deg,
+    rgb(190 210 255 / 0.22) 0%,
+    rgb(150 190 255 / 0.07) 22%,
+    rgb(150 190 255 / 0) 46%,
+    rgb(150 190 255 / 0) 80%,
+    rgb(150 190 255 / 0.06) 100%
+  );
+
+  /* --- Recessed and lit, inside a panel -----------------------------------
+     The two depth cues for DATA, as opposed to the planes above. A track that
+     a measurement runs along is cut INTO the pane — shaded along its top inner
+     edge, where the light from the upper left cannot reach — and the fill that
+     measures along it stands proud of the cut, catching light on its top. That
+     reads as "range" and "amount" without a legend, which is the only reason
+     either exists. Both are solid shadows on a known panel face, so neither
+     composites against the sky. */
+  --depth-well: inset 0 1px 2px rgb(0 0 0 / 0.5),
+    inset 0 -1px 0 rgb(150 190 255 / 0.07);
+  --depth-fill-light: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.26) 0%,
+    rgb(255 255 255 / 0) 55%,
+    rgb(0 0 0 / 0.12) 100%
+  );
+  --depth-fill-cast: 0 1px 2px rgb(0 0 0 / 0.4);
+
+  /* A physical object resting on the glass — a logo plate — gets a contact
+     shadow under it and a catch of light along its top edge. Without either it
+     reads as a hole punched in the pane rather than a tile laid on it. */
+  --depth-object: 0 1px 2px rgb(0 0 0 / 0.45), 0 3px 8px -3px rgb(0 0 0 / 0.5),
+    inset 0 1px 0 rgb(255 255 255 / 0.35);
+  --depth-object-dark: 0 1px 2px rgb(0 0 0 / 0.45),
+    0 3px 8px -3px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(150 190 255 / 0.12);
+
+  /* Interaction depth. A pressed control sinks one pixel and loses most of its
+     cast; a card the pointer is over rises two and takes the next elevation
+     step. Both are a response to the visitor — nothing here moves on its own. */
+  --depth-press: 0 0 1px rgb(0 0 0 / 0.5), inset 0 1px 2px rgb(0 0 0 / 0.35);
+  --lift-distance: -2px;
+  --press-distance: 1px;
+  --depth-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
   /* --- Where the ambient blue lives now ----------------------------------
      Not here. The three radial tokens this block used to hold (--sky-core,
      --sky-halo, --sky-low) are deleted, along with the pool of blue light that
@@ -548,6 +626,7 @@
   box-shadow: var(--elev-2);
 
   --rim-radius: calc(24px - 1px);
+  --rim: var(--edge-rim-lit);
 }
 
 /* Floats over the page and must detach from it completely, so it is nearly
@@ -630,6 +709,7 @@
   box-shadow: var(--elev-2);
 
   --rim-radius: calc(24px - 1px);
+  --rim: var(--edge-rim-quiet);
 }
 
 /* The active navigation item. Translucent rather than a baked plate — the one
@@ -673,12 +753,29 @@
   border: 1px solid var(--color-glass-edge);
   border-radius: 9999px;
   box-shadow: var(--elev-1);
-  transition: background-color 150ms;
+  transition:
+    background-color 150ms,
+    box-shadow 180ms var(--depth-ease),
+    transform 180ms var(--depth-ease);
 
   --rim-radius: 9999px;
 
-  &:hover {
-    background-color: var(--glass-control-hover);
+  /* Hover is gated on a pointer that can hover, so a tap on iPad does not leave
+     the control stuck lit. The lit rim is the same step the raised card takes:
+     "this is nearer to you now". */
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--glass-control-hover);
+      --rim: var(--edge-rim-lit);
+    }
+  }
+
+  /* Pressed: sinks one pixel and trades its cast for a shallow inner shade.
+     This is the touch screen's whole depth feedback, since touch has no hover,
+     and it is also what a keyboard Enter/Space shows on a <button>. */
+  &:active {
+    transform: translateY(var(--press-distance));
+    box-shadow: var(--depth-press);
   }
 }
 
@@ -726,7 +823,9 @@
   z-index: 0;
   border-radius: var(--rim-radius);
   padding: 1px;
-  background: var(--edge-rim);
+  /* Each tier may name its own strength through --rim; the plain panel takes
+     the base one. See the three --edge-rim tokens for what each plane gets. */
+  background: var(--rim, var(--edge-rim));
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -790,9 +889,82 @@
 
 @utility nav-active {
   background-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  /* The selected item is a plate set slightly proud of the card: a catch of
+     light along its top inner edge on top of the accent ring, so "current" is
+     carried by shape as well as by colour. */
   box-shadow:
     inset 0 0 0 1px rgb(141 176 255 / 0.26),
+    inset 0 1px 0 rgb(190 212 255 / 0.22),
     0 2px 16px -6px rgb(102 149 255 / 0.5);
+}
+
+/* --- Depth utilities -----------------------------------------------------
+   The planes above are containers. These are the depth cues for things INSIDE
+   them, and for the moment a visitor acts on something. Each is one idea, so a
+   component applies a name rather than re-spelling a shadow. */
+
+/* A channel cut into the pane: the track a bar or a range marker runs along.
+   The opaque baked surface is correct here — it sits inside a panel. */
+@utility well {
+  background-color: var(--color-surface-soft);
+  box-shadow: var(--depth-well);
+}
+
+/* A data fill standing proud of its well, lit on top. The hue underneath is
+   untouched — up stays green and down stays red — the gradient only adds light
+   on the top half and a little shade on the bottom edge. */
+@utility lit-fill {
+  background-image: var(--depth-fill-light);
+  box-shadow: var(--depth-fill-cast);
+}
+
+/* A tile resting on the glass: the logo plates. Light plate and dark
+   lettermark plate take different top catches, because white-on-light would
+   vanish and blue-on-dark reads as the room's own light. */
+@utility plate-object {
+  box-shadow: var(--depth-object);
+}
+
+@utility plate-object-dark {
+  box-shadow: var(--depth-object-dark);
+}
+
+/* A card that answers to the pointer or to keyboard focus inside it: rises two
+   pixels, takes the next elevation step and the lit rim. Only on hover-capable
+   pointers — a touch screen would otherwise strand the card raised after a tap
+   — and on :focus-within everywhere, which is the keyboard equivalent. Used
+   only where the card already carries a link, so the lift never promises an
+   action that does not exist. */
+@utility lift {
+  transition:
+    transform 220ms var(--depth-ease),
+    box-shadow 220ms var(--depth-ease),
+    background-color 150ms;
+
+  &:focus-within {
+    transform: translateY(var(--lift-distance));
+    box-shadow: var(--elev-2);
+    --rim: var(--edge-rim-lit);
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      transform: translateY(var(--lift-distance));
+      box-shadow: var(--elev-2);
+      --rim: var(--edge-rim-lit);
+    }
+  }
+}
+
+/* A small control on glass that should confirm a press — nav items, tabs,
+   filter chips, menu rows. One pixel down while held; nothing at rest. */
+@utility press {
+  transition-property: color, background-color, box-shadow, transform;
+  transition-duration: 150ms;
+
+  &:active {
+    transform: translateY(var(--press-distance));
+  }
 }
 
 /* --- The sky itself ------------------------------------------------------
@@ -864,8 +1036,10 @@
 
      translateZ(0) rather than `will-change: transform`: the hint is permanent
      here, not tied to a known animation, and will-change left on at rest is
-     exactly the overuse the audit checks for. Nothing about this layer ever
-     animates — it is promoted to be CACHED, not to be moved.
+     exactly the overuse the audit checks for. Nothing painted into this layer
+     ever animates — it is promoted to be CACHED, not to be moved. The children
+     that do move, the `depth-*` layers, move as transforms and opacity on
+     their own textures and repaint nothing here; see their note below.
 
      The risk this had to clear: a transform creates a stacking context, and the
      note above says the sky must sit inside the root stacking context so every
@@ -875,6 +1049,128 @@
      and 390 against the unpromoted build, not by counting panes: a pane count
      cannot tell a sampled backdrop from a dead one. */
   transform: translateZ(0);
+}
+
+/* --- Depth: the sky sways -------------------------------------------------
+   The sky is a stack of layers (see `night-sky.tsx`), and three of them move:
+   far (the far clouds and the dust), mid (the dim stars) and near (the bright
+   stars). They share ONE period and ONE curve and differ only in distance —
+   3, 6 and 12px — so what the eye reads is a single slow camera drifting past
+   a field with depth in it, the near stars sliding against the far ones. At
+   45s a leg the near layer travels about 0.27px a second: well under what
+   registers as motion at any moment, yet the parallax between the three is
+   there to be felt over a minute of reading.
+
+   Ambient, and deliberately independent of the visitor. Nothing the pointer
+   does starts, speeds, slows or stops it; the pointer glow and the
+   constellations in `sky-interaction.tsx` read each layer's live offset so
+   they stay on their stars while the stars move, rather than the sky holding
+   still for them.
+
+   WHY THIS IS AFFORDABLE NOW, when "the clouds must not drift" used to be a
+   rule. That rule was written when fourteen panes each ran a backdrop-filter
+   over this layer, so anything moving here re-ran fourteen Gaussian passes a
+   frame. Those filters are gone (see "Clear glass, not frosted"): a pane is
+   plain alpha, which the GPU composites for free whatever is behind it. Each
+   depth moves as a transform on its own layer, so the compositor slides
+   textures it already holds — the near clouds' fractal filters sit in a layer
+   that never moves and are rasterised once. Measured in a trace: zero Paint and
+   zero Raster events across a scroll with all of it running.
+
+   Three things stop it:
+
+   - an open overlay menu, the one surface that still frosts: moving weather
+     behind it would re-run its blur every frame. A UI state, not a response
+     to the sky;
+   - touch hardware, for the reason the twinkle used to stop there — an A14 GPU
+     is the device class this sky has already been caught being too expensive
+     on, and it cannot be profiled from here. The known cause (twinkle inside
+     the cached SVG) is gone, so this is caution rather than a measured
+     failure; lift it after checking an iPad;
+   - reduced motion (below). */
+@keyframes sky-sway {
+  to {
+    transform: translate3d(var(--sway-x), var(--sway-y), 0);
+  }
+}
+
+.sky-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.depth-far,
+.depth-mid,
+.depth-near {
+  animation: sky-sway 45s ease-in-out infinite alternate;
+}
+
+.depth-far {
+  --sway-x: -3px;
+  --sway-y: 1px;
+}
+
+.depth-mid {
+  --sway-x: -6px;
+  --sway-y: 2px;
+}
+
+.depth-near {
+  --sway-x: -12px;
+  --sway-y: 4px;
+}
+
+/* `xMidYMid slice` in CSS, for the one star layer drawn in HTML: a 16:10 box
+   that covers the sky and is centred on it. The sky is 100% wide and 100lvh
+   tall, so the box is whichever of the two it has to be to cover — and since
+   aspect-ratio derives the height, max() on the width alone gives exactly the
+   slice scale. `container-type` makes 1cqw a sixteenth of a viewBox unit's
+   hundred, which is how the stars are sized. */
+.sky-slice {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 160vh);
+  width: max(100%, 160lvh);
+  aspect-ratio: 16 / 10;
+  transform: translate(-50%, -50%);
+  container-type: inline-size;
+}
+
+.sky-star {
+  position: absolute;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+}
+
+html:has(.panel-overlay) :is(.depth-far, .depth-mid, .depth-near, .star-breathe) {
+  animation-play-state: paused;
+}
+
+@media (hover: none) {
+  .depth-far,
+  .depth-mid,
+  .depth-near {
+    animation: none;
+  }
+}
+
+/* The pointer glow and the constellation lines, drawn on a canvas that sits
+   exactly over the sky, at the sky's own depth, painted after it and behind
+   every panel. A separate layer on purpose: drawing into the sky's SVG would
+   throw away the cached texture this whole section exists to protect. It
+   draws only while one of the two effects is live and is cleared and left
+   alone the rest of the time. Sized like `night-sky` so a viewBox point maps
+   to the same pixel on both. */
+.sky-interaction {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  z-index: -1;
+  pointer-events: none;
 }
 
 /* --- The editorial voice -------------------------------------------------
@@ -1353,10 +1649,16 @@ a {
    breathing for a reason that is already written down: `night-sky.tsx` keeps
    them off the panel rectangles, so their invalidation never intersects a pane.
    Motion in this product is affordable exactly where it is bounded. */
+/* The pane also swings a few degrees down into its plane, hinged at the edge
+   it hangs from (--overlay-origin), so it reads as a sheet coming forward from
+   the trigger rather than as a flat card fading in. Eight degrees is the whole
+   of it: enough to see depth for a fifth of a second, far short of a flip. The
+   resting transform is none, so the open menu is perfectly flat and nothing
+   about reading it is 3D. */
 @keyframes overlay-settle {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.97);
+    transform: perspective(900px) rotateX(-8deg) translateY(-6px) scale(0.97);
     -webkit-backdrop-filter: blur(2px) saturate(1.35);
     backdrop-filter: blur(2px) saturate(1.35);
   }
@@ -1492,9 +1794,17 @@ a {
   animation: star-breathe var(--star-dur) ease-in-out var(--star-delay) infinite;
 }
 
-/* Not on touch hardware, and this is a device failure rather than a taste call.
+/* Not on touch hardware — now as caution rather than as a measured failure.
 
-   THIS RULE IS WHAT MAKES THE `night-sky` PROMOTION COMMENT TRUE. That comment
+   The cause recorded below is GONE: the bright stars are HTML elements in their
+   own layer (`depth-near` in `night-sky.tsx`), so a twinkle is an opacity change
+   the compositor applies to a texture it already holds, and it no longer
+   touches the cached SVG at all. The rule stays until someone has watched it on
+   an A14 iPad, because that device is where this sky has failed before and it
+   cannot be profiled from here. Remove it together with the `depth-*` touch
+   rule, after that check. What follows is the original diagnosis.
+
+   THIS RULE WAS WHAT MADE THE `night-sky` PROMOTION COMMENT TRUE. That comment
    states "nothing about this layer ever animates — it is promoted to be CACHED,
    not to be moved", and the promotion exists so WebKit keeps a full-viewport
    SVG of 313 circles and five feTurbulence/feDisplacementMap/feGaussianBlur
@@ -1561,6 +1871,18 @@ a {
     opacity: 0 !important;
   }
 
+  /* The sky holds still: every depth at its resting position and every star at
+     its authored base opacity. `none`, not the blanket clamp above: a 0.01ms
+     alternating run would leave a layer wherever the clamp happened to stop.
+     The canvas effects are not started at all under this preference —
+     `sky-interaction.tsx` checks it — so the sky is the static picture. */
+  .depth-far,
+  .depth-mid,
+  .depth-near,
+  .star-breathe {
+    animation: none !important;
+  }
+
   /* Same principle one level up: the page still resolves, it just does not
      move or defocus. The stagger goes too — a sequence is spatial information,
      and with nothing travelling there is nothing for it to sequence. */
@@ -1581,6 +1903,17 @@ a {
   .chart-line {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
+  }
+
+  /* Interaction depth keeps its light and loses its travel. A hovered or
+     focused card still takes the lit rim and the deeper cast, and a pressed
+     control still sinks its shadow — the state change is fully legible — but
+     nothing physically moves. */
+  .lift:hover,
+  .lift:focus-within,
+  .panel-control:active,
+  .press:active {
+    transform: none !important;
   }
 }
 

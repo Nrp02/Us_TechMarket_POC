@@ -52,7 +52,7 @@ export function SymbolSwitcher({ symbol, symbols }: { symbol: string; symbols: s
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        className="flex items-center gap-2 rounded-xl px-2 py-1 text-figure font-semibold tracking-tight text-ink transition-colors hover:bg-surface-strong pointer-coarse:min-h-11"
+        className="flex items-center gap-2 rounded-xl px-2 py-1 text-figure font-semibold tracking-tight text-ink press hover:bg-glass-lift pointer-coarse:min-h-11"
       >
         {symbol}
         <svg
@@ -81,7 +81,7 @@ export function SymbolSwitcher({ symbol, symbols }: { symbol: string; symbols: s
                   href={`/todays-activity/${option}`}
                   onClick={() => close()}
                   aria-current={option === symbol ? "page" : undefined}
-                  className={`block rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
+                  className={`block rounded-xl px-3 py-2 text-left text-sm font-medium press ${
                     option === symbol
                       ? "bg-surface-strong text-primary-active"
                       : "text-body hover:bg-surface-soft hover:text-ink"

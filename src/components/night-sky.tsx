@@ -295,7 +295,7 @@ const DUST: [number, number, number, number][] = [
   [826.3, 995.8, 1.5, 0.26],
 ];
 
-const DIM: [number, number, number, number][] = [
+export const DIM: [number, number, number, number][] = [
   [1103.7, 70.6, 2.76, 0.53],
   [1316.6, 446.8, 2.45, 0.37],
   [1556.1, 470.2, 2.73, 0.52],
@@ -418,7 +418,7 @@ const DIM: [number, number, number, number][] = [
 // units of margin. A dim star bleeding through glass is what the material is
 // for; a crisp bright one under text is a hot spot, and the Worst-Case
 // Composite Rule does not model point sources.
-const BRIGHT: [number, number, number, number][] = [
+export const BRIGHT: [number, number, number, number][] = [
   [843.5, 186.7, 3.19, 0.79],
   [506.4, 144, 3.41, 0.57],
   [412.3, 271.7, 4.02, 0.63],
@@ -600,137 +600,237 @@ const CLOUDS: {
   },
 ];
 
+// The two masses that drift. Both are the FAR layer by their own authored
+// role — HAZE is atmosphere "felt and not seen", DISTANT is the corner mass
+// "whose job is depth" — so moving them reads as air at a distance rather than
+// as weather sliding across the page. The three near masses, and every star,
+// stay exactly where they are.
+const FAR_CLOUDS = new Set(["cloud-haze", "cloud-distant"]);
+
+// The cloud machinery, written once and rendered into two SVGs: the static sky
+// and the drifting far layer. Each SVG carries its OWN defs under a suffix
+// rather than reaching into the other's by id. A cross-SVG url(#…) does
+// resolve in current engines, but it ties the far layer's rasterisation to a
+// document it is deliberately separated from — the point of the split is that
+// the two are independent textures.
+function CloudDefs({
+  suffix,
+  clouds,
+}: {
+  suffix: string;
+  clouds: typeof CLOUDS;
+}) {
+  return (
+    <>
+      {/* Lit at the top, shadowed at the base. Applied per mass rather than
+          across the whole canvas, so every cloud has an underside — which
+          is most of what separates a cloud from a glow. */}
+      <linearGradient id={`cloud-tint${suffix}`} x1="0.15" y1="0" x2="0.6" y2="1">
+        <stop offset="0%" stopColor="#4a83e6" />
+        <stop offset="42%" stopColor="#1d4fa4" />
+        <stop offset="100%" stopColor="#142b56" />
+      </linearGradient>
+
+      {/* One lobe. Solid at the core, gone at the rim — the softness is in
+          the gradient, so the displacement below has something continuous
+          to push around instead of a hard edge to tear. */}
+      <radialGradient id={`lobe${suffix}`}>
+        <stop offset="0%" stopColor="#fff" stopOpacity="1" />
+        <stop offset="45%" stopColor="#fff" stopOpacity="0.82" />
+        <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+      </radialGradient>
+
+      {/* The billow. `feDisplacementMap` pushes the authored silhouette
+          around by a fractal instead of building the silhouette out of one,
+          which is the whole difference between a cloud and fog. Two seeds
+          and two scales so four masses do not read as one stamp repeated. */}
+      <filter
+        id={`billow-a${suffix}`}
+        x="-30%"
+        y="-30%"
+        width="160%"
+        height="160%"
+        colorInterpolationFilters="sRGB"
+      >
+        <feTurbulence type="fractalNoise" baseFrequency="0.0034" numOctaves="4" seed="23" result="n" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="120" xChannelSelector="R" yChannelSelector="G" />
+        <feGaussianBlur stdDeviation="13" />
+      </filter>
+      <filter
+        id={`billow-b${suffix}`}
+        x="-30%"
+        y="-30%"
+        width="160%"
+        height="160%"
+        colorInterpolationFilters="sRGB"
+      >
+        <feTurbulence type="fractalNoise" baseFrequency="0.0052" numOctaves="4" seed="71" result="n" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="95" xChannelSelector="R" yChannelSelector="G" />
+        <feGaussianBlur stdDeviation="10" />
+      </filter>
+
+      {clouds.map((c) => (
+        <mask key={c.id} id={`${c.id}${suffix}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1600" height="1000">
+          <g filter={`url(#${c.filter}${suffix})`}>
+            {c.lobes.map(([cx, cy, rx, ry, o], i) => (
+              <ellipse key={i} cx={cx} cy={cy} rx={rx} ry={ry} fill={`url(#lobe${suffix})`} fillOpacity={o} />
+            ))}
+          </g>
+        </mask>
+      ))}
+    </>
+  );
+}
+
+// Opacity caps each mass, and these numbers are load-bearing: together they
+// set the brightest field a panel can ever sit in front of, which is what
+// --color-canvas is the composite of and what every contrast pair in the
+// product is measured against. Raising any of them without re-running the
+// harness invalidates all of them. Swaying a far mass does not raise a peak:
+// it moves at most 3px, and the two far masses are the faintest in the sky.
+function CloudMasses({
+  suffix,
+  clouds,
+}: {
+  suffix: string;
+  clouds: typeof CLOUDS;
+}) {
+  return (
+    <>
+      {clouds.map((c) => (
+        <g key={c.id} mask={`url(#${c.id}${suffix})`} opacity={c.opacity}>
+          <rect x={c.box[0]} y={c.box[1]} width={c.box[2]} height={c.box[3]} fill={`url(#cloud-tint${suffix})`} />
+        </g>
+      ))}
+    </>
+  );
+}
+
+// Shared by every star SVG layer so each one crops exactly like the others.
+// `slice` scales the field to cover the viewport and crops the excess, so
+// stars stay round at every aspect ratio; `none` would stretch them into
+// ellipses on a wide laptop.
+const SVG_FRAME = {
+  viewBox: "0 0 1600 1000",
+  preserveAspectRatio: "xMidYMid slice",
+  className: "size-full",
+  focusable: "false",
+} as const;
+
+// --- Depth ----------------------------------------------------------------
+// The sky is a stack of layers at three depths, each its own element so it can
+// be moved as a compositor transform without re-rasterising anything:
+//
+//   far   — the far cloud masses and the dust stars   (depth-far)
+//   —     — the near cloud masses: STATIC, and the one layer carrying the
+//           heavy fractal filters, so it is rasterised once and never moved
+//   mid   — the dim stars                              (depth-mid)
+//   near  — the bright stars, which also twinkle       (depth-near)
+//
+// All three depths sway on one shared period and differ only in how far they
+// travel — the nearer, the further. That ratio is what the eye reads as depth:
+// one slow camera drifting past a field, rather than three layers moving
+// independently. The sizes and brightnesses that already separate the tiers
+// (dust 1.2-1.8 units at 0.16-0.32, dim 2.2-3.2 at 0.30-0.55, bright 3.0-4.2 at
+// 0.57-0.79 with a halo) are the other half of the cue and are left exactly as
+// measured. See `depth-*` in globals.css for the amounts and what stops them.
 export function NightSky() {
+  const far = CLOUDS.filter((c) => FAR_CLOUDS.has(c.id));
+  const near = CLOUDS.filter((c) => !FAR_CLOUDS.has(c.id));
+
   return (
     <div className="night-sky" aria-hidden>
-      <svg
-        // `slice` scales the field to cover the viewport and crops the excess,
-        // so stars stay round at every aspect ratio. `none` would stretch them
-        // into ellipses on a wide laptop.
-        viewBox="0 0 1600 1000"
-        preserveAspectRatio="xMidYMid slice"
-        className="size-full"
-        focusable="false"
-      >
-        <defs>
-          {/* Lit at the top, shadowed at the base. Applied per mass rather than
-              across the whole canvas, so every cloud has an underside — which
-              is most of what separates a cloud from a glow. */}
-          <linearGradient id="cloud-tint" x1="0.15" y1="0" x2="0.6" y2="1">
-            <stop offset="0%" stopColor="#4a83e6" />
-            <stop offset="42%" stopColor="#1d4fa4" />
-            <stop offset="100%" stopColor="#142b56" />
-          </linearGradient>
+      {/* Far weather. Painted first, as it was in the single SVG this stack
+          replaces: nothing is ever dimmed by haze passing in front of it. */}
+      <div className="sky-layer depth-far">
+        <svg {...SVG_FRAME}>
+          <defs>
+            <CloudDefs suffix="-far" clouds={far} />
+          </defs>
+          <CloudMasses suffix="-far" clouds={far} />
+        </svg>
+      </div>
 
-          {/* One lobe. Solid at the core, gone at the rim — the softness is in
-              the gradient, so the displacement below has something continuous
-              to push around instead of a hard edge to tear. */}
-          <radialGradient id="lobe">
-            <stop offset="0%" stopColor="#fff" stopOpacity="1" />
-            <stop offset="45%" stopColor="#fff" stopOpacity="0.82" />
-            <stop offset="100%" stopColor="#fff" stopOpacity="0" />
-          </radialGradient>
+      {/* Near weather — static on purpose. Its two fractal filters are the
+          expensive part of the whole sky, and a layer that never moves is a
+          texture that is rasterised once and then only composited. */}
+      <div className="sky-layer">
+        <svg {...SVG_FRAME}>
+          <defs>
+            <CloudDefs suffix="" clouds={near} />
+          </defs>
+          <CloudMasses suffix="" clouds={near} />
+        </svg>
+      </div>
 
-          {/* The billow. `feDisplacementMap` pushes the authored silhouette
-              around by a fractal instead of building the silhouette out of one,
-              which is the whole difference between a cloud and fog. Two seeds
-              and two scales so four masses do not read as one stamp repeated. */}
-          <filter
-            id="billow-a"
-            x="-30%"
-            y="-30%"
-            width="160%"
-            height="160%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feTurbulence type="fractalNoise" baseFrequency="0.0034" numOctaves="4" seed="23" result="n" />
-            <feDisplacementMap in="SourceGraphic" in2="n" scale="120" xChannelSelector="R" yChannelSelector="G" />
-            <feGaussianBlur stdDeviation="13" />
-          </filter>
-          <filter
-            id="billow-b"
-            x="-30%"
-            y="-30%"
-            width="160%"
-            height="160%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feTurbulence type="fractalNoise" baseFrequency="0.0052" numOctaves="4" seed="71" result="n" />
-            <feDisplacementMap in="SourceGraphic" in2="n" scale="95" xChannelSelector="R" yChannelSelector="G" />
-            <feGaussianBlur stdDeviation="10" />
-          </filter>
+      {/* Silver, not blue-white. The sky around them is blue enough that a
+          blue star disappears into its own weather; a neutral, faintly cool
+          metal is what separates the two, and the separation is the point —
+          these two materials are the whole palette of the field.
 
-          {CLOUDS.map((c) => (
-            <mask key={c.id} id={c.id} maskUnits="userSpaceOnUse" x="0" y="0" width="1600" height="1000">
-              <g filter={`url(#${c.filter})`}>
-                {c.lobes.map(([cx, cy, rx, ry, o], i) => (
-                  <ellipse key={i} cx={cx} cy={cy} rx={rx} ry={ry} fill="url(#lobe)" fillOpacity={o} />
-                ))}
-              </g>
-            </mask>
-          ))}
-
-          {/* One gradient reused by every halo. A flat circle at low opacity
-              would read as a visible disc rather than a glow. Silver, like the
-              star at its centre. */}
-          <radialGradient id="star-glow">
-            <stop offset="0%" stopColor="#e7ebf2" stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#e7ebf2" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* Opacity caps each mass, and these four numbers are load-bearing:
-            together they set the brightest field a panel can ever sit in front
-            of, which is what --color-canvas is the composite of and what every
-            contrast pair in the product is measured against. Raising any of
-            them without re-running the harness invalidates all of them. */}
-        {CLOUDS.map((c) => (
-          <g key={c.id} mask={`url(#${c.id})`} opacity={c.opacity}>
-            <rect x={c.box[0]} y={c.box[1]} width={c.box[2]} height={c.box[3]} fill="url(#cloud-tint)" />
+          Dust sits with the far weather in depth but above the near clouds in
+          paint order, where it always was. */}
+      <div className="sky-layer depth-far">
+        <svg {...SVG_FRAME}>
+          <g fill="#c9d0dc">
+            {DUST.map(([cx, cy, r, o], i) => (
+              <circle key={i} cx={cx} cy={cy} r={r} opacity={o} />
+            ))}
           </g>
-        ))}
+        </svg>
+      </div>
 
-        {/* Silver, not blue-white. The sky around them is blue enough that a
-            blue star disappears into its own weather; a neutral, faintly cool
-            metal is what separates the two, and the separation is the point —
-            these two materials are the whole palette of the field. */}
-        <g fill="#c9d0dc">
-          {DUST.map(([cx, cy, r, o], i) => (
-            <circle key={i} cx={cx} cy={cy} r={r} opacity={o} />
-          ))}
-        </g>
-        <g fill="#dde3ec">
-          {DIM.map(([cx, cy, r, o], i) => (
-            <circle key={i} cx={cx} cy={cy} r={r} opacity={o} />
-          ))}
-        </g>
+      <div className="sky-layer depth-mid">
+        <svg {...SVG_FRAME}>
+          <g fill="#dde3ec">
+            {DIM.map(([cx, cy, r, o], i) => (
+              <circle key={i} cx={cx} cy={cy} r={r} opacity={o} />
+            ))}
+          </g>
+        </svg>
+      </div>
 
-        <g>
+      {/* The bright stars are HTML rather than SVG, and that is the whole
+          performance story of the twinkle. It used to animate the opacity of
+          <g> elements INSIDE the sky's one cached SVG, and an SVG group is not
+          composited on its own — every cycle dirtied the shared layer and threw
+          its texture away, continuously, which is why the twinkle had to be
+          switched off on A14 hardware. As eighteen small elements, each opacity
+          change is applied by the compositor to a texture it already holds.
+
+          `sky-slice` reproduces `xMidYMid slice` in CSS — a 16:10 box that
+          covers the sky and is centred on it — so a star at viewBox (x, y)
+          lands on the same pixel it did in the SVG. Sizes are in `cqw`
+          against that box: 1cqw is 16 viewBox units.
+
+          Each star is its core and its halo drawn as one radial gradient,
+          matching the two circles it replaces: a solid core of radius r at the
+          star's opacity, and a halo out to 6r starting at a quarter of it. */}
+      <div className="sky-layer depth-near">
+        <div className="sky-slice">
           {BRIGHT.map(([cx, cy, r, o], i) => (
-            // The cycle length and its phase are derived from the index rather
-            // than randomised, so the sky stays byte-identical between renders
-            // like every other value in this file. 6.2s to 11.6s, and a
-            // NEGATIVE delay so each star starts part-way through its own cycle
-            // — with positive delays they would all begin dark together on the
-            // first paint, which is the one moment a visitor is looking.
-            //
-            // Animating the group rather than the circles multiplies with each
-            // child's own opacity, so the halo keeps its ratio to the core and
-            // the base value stays exactly what the harness measured.
-            <g
+            // Cycle length and phase are derived from the index rather than
+            // randomised, so the sky stays byte-identical between renders like
+            // every other value in this file. 6.2s to 11.6s, and a NEGATIVE
+            // delay so each star starts part-way through its own cycle — with
+            // positive delays they would all begin dark together on the first
+            // paint, which is the one moment a visitor is looking.
+            <span
               key={i}
-              className="star-breathe"
+              className="sky-star star-breathe"
               style={{
+                left: `${(cx / 1600) * 100}%`,
+                top: `${(cy / 1000) * 100}%`,
+                width: `${(r * 12) / 16}cqw`,
+                height: `${(r * 12) / 16}cqw`,
+                background: `radial-gradient(circle closest-side, rgb(244 246 250 / ${o}) 0 16.667%, rgb(231 235 242 / ${(0.25 * o * 5) / 6}) 16.667%, rgb(231 235 242 / 0) 100%)`,
                 "--star-dur": `${6.2 + (i % 7) * 0.9}s`,
                 "--star-delay": `-${(i * 1.37).toFixed(2)}s`,
               } as CSSProperties}
-            >
-              <circle cx={cx} cy={cy} r={r * 6} fill="url(#star-glow)" opacity={o * 0.5} />
-              <circle cx={cx} cy={cy} r={r} fill="#f4f6fa" opacity={o} />
-            </g>
+            />
           ))}
-        </g>
-      </svg>
+        </div>
+      </div>
     </div>
   );
 }

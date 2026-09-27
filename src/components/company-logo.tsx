@@ -32,7 +32,7 @@ export function CompanyLogo({
         // brand colours and several are near-black, so a theme-aware surface
         // would swallow them in dark mode. The lettermark is plain text and
         // stays theme-aware.
-        src ? "bg-logo-plate" : "bg-surface-strong"
+        src ? "bg-logo-plate plate-object" : "bg-surface-strong plate-object-dark"
       }`}
       aria-hidden
     >

@@ -28,8 +28,8 @@ import { FINNHUB_LOGO, logoSrc } from "@/lib/logos";
 const PLATE = "flex h-11 w-24 shrink-0 items-center justify-center rounded-full px-2";
 // Real marks get the always-light plate (they are drawn in their own brand
 // colours and several are near-black); the lettermark stays theme-aware.
-const LOGO_PLATE = `${PLATE} bg-logo-plate`;
-const TEXT_PLATE = `${PLATE} bg-surface-strong`;
+const LOGO_PLATE = `${PLATE} bg-logo-plate plate-object`;
+const TEXT_PLATE = `${PLATE} bg-surface-strong plate-object-dark`;
 
 export function NewsThumbnail({ symbol }: { symbol: string | null }) {
   // Market news carries no tickers at all — that is how the category is

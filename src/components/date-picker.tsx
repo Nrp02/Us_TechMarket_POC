@@ -117,7 +117,7 @@ export function DatePicker({
                   href={option.href}
                   onClick={() => close()}
                   aria-current={option.current ? "page" : undefined}
-                  className={`block rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`block rounded-xl px-3 py-2 text-sm font-medium press ${
                     option.current
                       ? "bg-surface-strong text-primary-active"
                       : "text-body hover:bg-surface-soft hover:text-ink"

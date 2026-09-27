@@ -187,7 +187,9 @@ export function IntradayChart({
               // Its own token rather than surface-strong: these bars are data,
               // so they answer to the 3:1 floor for graphical objects. On
               // surface-strong they measured 1.26:1 against the card.
-              fill="var(--color-chart-bar)"
+              // Lit from the top, per bar — see `volume-lit` in
+              // chart-gradients.tsx. The body stop is still chart-bar.
+              fill="url(#volume-lit)"
             />
           );
         })}
