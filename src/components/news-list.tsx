@@ -45,7 +45,7 @@ export function NewsList({
         return (
         <li
           key={item.id}
-          className="flex gap-4 border-b border-hairline p-5 transition-colors last:border-0 hover:bg-surface-soft"
+          className="flex gap-4 border-b border-hairline p-5 last:border-0 hover:bg-surface-soft"
         >
           <NewsThumbnail symbol={symbol} />
 
