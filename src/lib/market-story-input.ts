@@ -12,7 +12,7 @@
 
 import { isFomcDay, mostRecentDecision } from "./fomc-calendar.ts";
 import { FRED_SERIES } from "./fred.ts";
-import { TOP_20_SYMBOLS } from "./symbols.ts";
+import { TOP_20_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "./symbols.ts";
 import { computeRecentTrend, type RecentTrend } from "./trend-detection.ts";
 import {
   computeBreadth,
@@ -33,6 +33,7 @@ const SERIES_LABEL: Record<string, string> = {
 export type MarketStoryNewsItem = {
   headline: string;
   summary: string | null;
+  sourceText?: string | null;
   sourceUrl: string;
   publishedAt: string;
 };
@@ -56,7 +57,7 @@ export type MarketStoryIndexClose = {
 export type MarketStoryInputParams = {
   day: string;
   /** Tracked stock changePercent/significant — same Ticker fields computeBreadth/computeSectorAverages already read. */
-  trackedStocks: { symbol: string; changePercent: number; significant: boolean }[];
+  trackedStocks: { symbol: string; changePercent: number; significant: boolean; relativeVolume?: number | null }[];
   /** INDEX_CARDS' own tickers (NASDAQ/S&P/Dow/Tech/Volatility/Semiconductors), plus today's price so a range position can be computed against indexDailyCloses. */
   indices: { label: string; symbol: string; changePercent: number; price: number }[];
   /** Each proxy's own trailing history (up to 370 days, daily_closes' own retention) — backs the same "how unusual vs. its own past year" read story-input.ts already gives individual stocks. */
@@ -78,6 +79,8 @@ export type MarketStoryIndex = {
 
 export type MarketStoryInput = {
   day: string;
+  coverage: { availableStocks: number; expectedStocks: number };
+  significanceVolumeCoverage: { knownTop20: number; totalTop20: number };
   breadth: ReturnType<typeof computeBreadth>;
   sectorAverages: SectorAverage[];
   indices: MarketStoryIndex[];
@@ -118,6 +121,11 @@ export function buildMarketStoryInput(params: MarketStoryInputParams): MarketSto
 
   return {
     day,
+    coverage: { availableStocks: trackedStocks.length, expectedStocks: TRACKED_STOCK_SYMBOLS.length },
+    significanceVolumeCoverage: {
+      knownTop20: trackedStocks.filter((t) => TOP_20_SYMBOLS.includes(t.symbol) && t.relativeVolume != null).length,
+      totalTop20: trackedStocks.filter((t) => TOP_20_SYMBOLS.includes(t.symbol)).length,
+    },
     breadth: computeBreadth(trackedStocks, trackedStocks.filter((t) => TOP_20_SYMBOLS.includes(t.symbol))),
     sectorAverages: computeSectorAverages(trackedStocks),
     indices: indicesWithVolatility,

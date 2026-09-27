@@ -1,0 +1,15 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+import {buildStoryPrompt,stockEvidenceIds} from '../../src/lib/story-generation.ts';
+import {generateJson} from '../../src/lib/groq.ts';
+import {analysisSchema,validateAnalysisChecks} from '../../src/lib/story-analysis-quality.ts';
+const days=JSON.parse(readFileSync('.scratch/narrative-audit/reasoning-inputs.json','utf8'));
+const day=days.find((d:any)=>d.day==='2026-09-25');
+const input=day.stocks.find((s:any)=>s.symbol===(process.argv[2]??'NVDA'));
+const effort=(process.argv[3]??'medium') as 'low'|'medium';
+const prompt=buildStoryPrompt(input.symbol,input,input.news,day.market.indices.find((i:any)=>i.symbol==='XLK').changePercent,day.market.indices.find((i:any)=>i.symbol==='SPY').changePercent);
+writeFileSync(`.scratch/narrative-audit/sample-${input.symbol}-${effort}.prompt.txt`,prompt);
+console.log({symbol:input.symbol,effort,characters:prompt.length,news:input.news.length,business:input.businessContext.length});
+const result=await generateJson<Record<string,unknown>>(prompt,{timeoutMs:30000,reasoningEffort:effort,maxCompletionTokens:4500,schema:analysisSchema(['comparison','classification','unusualness','explanation','fundamentals','peerSectorRelation','ytdTakeaway'],true)});
+writeFileSync(`.scratch/narrative-audit/sample-${input.symbol}-${effort}.json`,JSON.stringify(result,null,2));
+validateAnalysisChecks(result.data,['comparison','classification','unusualness','explanation','fundamentals','peerSectorRelation','ytdTakeaway'],stockEvidenceIds(input),['explanation','fundamentals']);
+console.log({tokens:result.tokens,completion:result.completionTokens,limit:result.rateLimitTokens,remaining:result.remainingTokens,explanation:result.data.explanation,fundamentals:result.data.fundamentals});

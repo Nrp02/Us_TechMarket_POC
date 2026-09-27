@@ -44,10 +44,10 @@
 
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -82,7 +82,11 @@ export default function Error({
 
         <button
           type="button"
-          onClick={reset}
+          // retry(), not reset(): in this Next version reset() only re-renders
+          // the boundary's children without re-fetching, so after a failed
+          // database read "Try again" rendered the same failure. retry()
+          // re-fetches the segment, which is what the button promises.
+          onClick={() => retry()}
           className="panel-control mt-5 px-4 py-2 text-sm font-semibold text-ink"
         >
           Try again

@@ -1,3 +1,4 @@
+import { readRows } from "@/lib/db-read";
 import { loadDayDataBatch } from "@/lib/day-data";
 import { fetchEvents } from "@/lib/finnhub-events";
 import {
@@ -355,17 +356,23 @@ export async function generateDailySummaries(
 ): Promise<DailySummaryResult> {
   const startedJobAt = Date.now();
 
-  const [{ data: doneRows }, { data: priceRows }] = await Promise.all([
-    db.from("daily_summaries").select("symbol").eq("summary_date", day),
-    db
-      .from("price_cache")
-      .select("symbol, price, change, change_percent, volume, avg_volume, updated_at"),
+  // Through readRows, not bare `{ data }`: a failed read must throw rather
+  // than arrive as an empty done-set (re-spending AI calls on finished stocks)
+  // or an empty price map (every stock reported stale).
+  const [doneRows, priceRows] = await Promise.all([
+    readRows<{ symbol: string }>("daily-summary-done", (signal) =>
+      db.from("daily_summaries").select("symbol").eq("summary_date", day).abortSignal(signal),
+    ),
+    readRows<PriceRow & { symbol: string }>("daily-summary-prices", (signal) =>
+      db
+        .from("price_cache")
+        .select("symbol, price, change, change_percent, volume, avg_volume, updated_at")
+        .abortSignal(signal),
+    ),
   ]);
 
-  const done = new Set((doneRows ?? []).map((r) => r.symbol as string));
-  const prices = new Map(
-    (priceRows ?? []).map((r) => [r.symbol as string, r as unknown as PriceRow]),
-  );
+  const done = new Set(doneRows.map((r) => r.symbol));
+  const prices = new Map(priceRows.map((r) => [r.symbol, r]));
 
   const result: DailySummaryResult = {
     tradingDay: day,

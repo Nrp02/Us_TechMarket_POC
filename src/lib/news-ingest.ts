@@ -155,6 +155,16 @@ export async function ingestNews(): Promise<IngestResult> {
   const toSummarise = selectForSummary(articles, hasSummary, MAX_PER_CYCLE);
   const pending = articles.filter((a) => !hasSummary.has(a.finnhubId)).length;
   result.awaitingSummary = pending;
+  // Preserve the actual provider snippet independently from the displayed paraphrase.
+  const evidenceRows = articles.flatMap((article) => {
+    const news_id = newsIdByFinnhubId.get(article.finnhubId);
+    return news_id != null && article.snippet.trim()
+      ? [{ news_id, source_text: article.snippet }] : [];
+  });
+  if (evidenceRows.length) {
+    const { error } = await db.from("news_evidence").upsert(evidenceRows, { onConflict: "news_id" });
+    if (error) throw new Error(`news evidence upsert: ${error.message}`);
+  }
   if (!toSummarise.length) return result;
 
   // One AI attempt per cycle. A failed batch remains pending in the feed.

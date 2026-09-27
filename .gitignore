@@ -66,3 +66,16 @@ next-env.d.ts
 .scratch/narrative-audit/*.before.json
 .scratch/narrative-audit/*.after.json
 .scratch/narrative-audit/pipeline-sample.json
+
+# Local reasoning experiments and retained provider inputs
+.scratch/narrative-audit/reasoning-inputs*.json
+.scratch/narrative-audit/recovered-*.json
+.scratch/narrative-audit/*.inputs.json
+.scratch/narrative-audit/sample-*.json
+.scratch/narrative-audit/sample-*.prompt.txt
+.scratch/narrative-audit/accepted-*.json
+.scratch/narrative-audit/*.log
+
+.scratch/narrative-audit/rejected-*.json
+.scratch/narrative-audit/*.rejected.json
+.scratch/narrative-audit/reasoned-draft.json

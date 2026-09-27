@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { dayWindow, tradingDay } from "./market.ts";
+import { dayWindow, tradingDay, sessionDayTimes } from "./market.ts";
 
 // dayWindow used to exist twice — once in queries.ts and once inline in
 // day-data.ts — with the same arithmetic copied out. Four read paths depend on
@@ -67,4 +67,14 @@ test("the window is wider than the day it selects", () => {
   // against this window truncates the wrong set. Documented in queries.ts.
   const { from, to } = dayWindow("2026-08-20");
   assert.equal(Date.parse(to) - Date.parse(from), 36 * 3_600_000);
+});
+
+test("as-of cutoffs are ET midnight and 16:00, not the broad UTC query window", () => {
+  assert.deepEqual(sessionDayTimes("2026-09-25"), { start: "2026-09-25T04:00:00.000Z", close: "2026-09-25T20:00:00.000Z" });
+  assert.deepEqual(sessionDayTimes("2026-01-09"), { start: "2026-01-09T05:00:00.000Z", close: "2026-01-09T21:00:00.000Z" });
+});
+
+test("exact cutoffs handle an offset change between midnight and close", () => {
+  assert.deepEqual(sessionDayTimes("2026-03-08"), { start: "2026-03-08T05:00:00.000Z", close: "2026-03-08T20:00:00.000Z" });
+  assert.deepEqual(sessionDayTimes("2026-11-01"), { start: "2026-11-01T04:00:00.000Z", close: "2026-11-01T21:00:00.000Z" });
 });

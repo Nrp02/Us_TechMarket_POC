@@ -1,3 +1,4 @@
+throw new Error("Retired: analytical sections must be generated and reviewed from engine evidence via scripts/backfill-story-analysis.mts --ai");
 // Assemble the agent's 100 individually authored explanations/business reads
 // with the production engines' numerical context. No provider or DB calls.
 import { readFileSync, writeFileSync } from "node:fs";

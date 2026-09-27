@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 
+import { readDailyCloses } from "@/lib/daily-closes";
 import { buildDayTicker } from "@/lib/day-ticker";
 import { readAllRows, readMaybeOne, readRows } from "@/lib/db-read";
 import { dayWindow, tradingDay } from "@/lib/market";
@@ -529,27 +530,13 @@ export type Activity = {
 const SECTOR_SYMBOL = "XLK";
 const MARKET_SYMBOL = "SPY";
 
-/**
- * One symbol's daily_closes history, oldest bound by the table's own 370-day
- * retention rather than a limit here — 370 rows is nowhere near PostgREST's
- * 1000-row ceiling, so no exact count is asked for (see db-read.ts's rule on
- * when a count is worth paying for).
- */
+/** One symbol's daily_closes history, bounded by the table's 370-day retention. */
 async function getDailyCloses(
   symbol: string,
   day: string,
 ): Promise<{ tradingDay: string; close: number }[]> {
-  const rows = await readRows<{ trading_day: string; close: number }>(
-    `daily-closes:${symbol}`,
-    (signal) =>
-      db
-        .from("daily_closes")
-        .select("trading_day, close")
-        .eq("symbol", symbol)
-        .lte("trading_day", day)
-        .abortSignal(signal),
-  );
-  return rows.map((row) => ({ tradingDay: row.trading_day, close: Number(row.close) }));
+  const rows = await readDailyCloses(`daily-closes:${symbol}`, [symbol], day);
+  return rows.map((row) => ({ tradingDay: row.tradingDay, close: row.close }));
 }
 
 /**
@@ -565,34 +552,7 @@ async function getDailyCloses(
 async function getIndexDailyClosesUncached(
   day: string,
 ): Promise<{ symbol: string; tradingDay: string; close: number; changePercent: number | null }[]> {
-  // 6 symbols x up to 370 retained days can exceed PostgREST's 1000-row cap
-  // (measured live: 1512 matching rows truncated to 1000 with no ORDER BY,
-  // silently dropping XLK and VIXY entirely). readAllRows pages past the
-  // ceiling instead of a plain readRows, which would either miss the
-  // truncation (no count requested) or throw once retention genuinely grows
-  // past a single page — same pattern as getDayTickers below.
-  const rows = await readAllRows<{
-    symbol: string;
-    trading_day: string;
-    close: number;
-    change_percent: number | null;
-  }>("index-daily-closes", (signal, start, end) =>
-    db
-      .from("daily_closes")
-      .select("symbol, trading_day, close, change_percent", { count: "exact" })
-      .in("symbol", INDEX_SYMBOLS)
-      .lte("trading_day", day)
-      .order("trading_day", { ascending: true })
-      .order("symbol", { ascending: true })
-      .range(start, end)
-      .abortSignal(signal),
-  );
-  return rows.map((row) => ({
-    symbol: row.symbol,
-    tradingDay: row.trading_day,
-    close: Number(row.close),
-    changePercent: row.change_percent == null ? null : Number(row.change_percent),
-  }));
+  return readDailyCloses("index-daily-closes", INDEX_SYMBOLS, day);
 }
 
 export const getIndexDailyCloses = unstable_cache(

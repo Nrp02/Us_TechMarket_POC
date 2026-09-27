@@ -81,6 +81,27 @@ export function tradingDay(at: Date = new Date()): string {
   }).format(at);
 }
 
+/** Exact ET midnight and regular 16:00 close; dayWindow is only a broad query window. */
+export function sessionDayTimes(day: string): { start: string; close: string } {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hourCycle: "h23",
+  });
+  const atHour = (hour: number) => {
+    const target = Date.parse(`${day}T${String(hour).padStart(2, "0")}:00:00Z`);
+    let instant = target;
+    // Resolve local wall time against its actual offset, including DST-change days.
+    for (let i = 0; i < 2; i++) {
+      const parts = formatter.formatToParts(new Date(instant));
+      const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+      const local = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"));
+      instant += target - local;
+    }
+    return new Date(instant).toISOString();
+  };
+  return { start: atHour(0), close: atHour(16) };
+}
+
 /**
  * The UTC bounds that contain one New York trading day. New York is UTC-4 or
  * UTC-5, so an ET day always falls between its own midnight UTC and noon UTC the

@@ -164,14 +164,6 @@ export function TodaysStory({ activity }: { activity: Activity }) {
       <section>
         <SectionHeading>Year-to-Date</SectionHeading>
         <SectionCard text={story.sections.ytdTakeaway} chart={ytdChart(dailyCloses)} />
-        <p className="mt-4 max-w-[62ch] text-xs leading-relaxed text-muted">
-          Written by AI from {ticker.symbol}&apos;s recorded prices, volume,
-          peers, fundamentals, news and calendar for this session. Every
-          section may infer a plausible, data-grounded connection between
-          them, but only from what&apos;s shown here — never an outside
-          fact, cause, or event. Nothing here predicts future prices or
-          offers investment advice.
-        </p>
       </section>
     </>
   );

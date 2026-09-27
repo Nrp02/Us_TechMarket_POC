@@ -61,12 +61,12 @@ const JOBS = [
   // Today's Story narrative — a second, independent job on the same window as
   // daily-summaries above (same post-close/staleness reasoning applies), but
   // its own cron entry because it calls a different provider (Groq, not
-  // Gemini) and paces 2 stocks/tick rather than one 5-stock batch. 10 of the
-  // 12 ticks cover all 20 Top-20 symbols; the spare 2 absorb a rate-limited or
+  // Gemini) and paces one stock/tick. 20 of the
+  // 48 ticks cover all Top-20 symbols; the spare ticks absorb a rate-limited or
   // failed stock. See src/lib/story-generation.ts.
   {
     name: "today-story",
-    schedule: "5-55/10 22-23 * * 1-5",
+    schedule: "0-55/5 20-23 * * 1-5",
     path: "/api/story",
   },
 ];
