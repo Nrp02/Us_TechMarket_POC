@@ -1,11 +1,13 @@
 import { formatEtTime, formatPercent, formatPrice, formatRelVolume } from "@/lib/format";
 import { generateJson, GroqRateLimitError } from "@/lib/groq";
-import { dayWindow, tradingDay } from "@/lib/market";
+import { dayWindow, isAtOrAfterClose, tradingDay } from "@/lib/market";
 import { computePeriodPerformance } from "@/lib/period-performance";
 import { relativeVolume } from "@/lib/significance";
 import { ANALYSIS_GUIDELINE } from "@/lib/story-guideline";
-import { buildStoryInput, type StoryDailyClose, type StoryFundamentals, type StoryInput, type StoryNewsItem, type StorySecFiling } from "@/lib/story-input";
+import { buildStoryInput, type StoryDailyClose, type StoryInput, type StoryNewsItem, type StorySecFiling } from "@/lib/story-input";
 import { db } from "@/lib/supabase";
+import { loadStoryFundamentals } from "@/lib/story-fundamentals";
+import { readAllRows } from "@/lib/db-read";
 import { NAME_BY_SYMBOL, PEERS, TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // The end-of-day Today's Story job. For each of the Top 20, in a stock's own
@@ -139,7 +141,7 @@ const NO_YTD =
 const percentOrNull = (value: number | null) => (value == null ? "not available" : formatPercent(value));
 const relVolumeOrNull = (value: number | null) => (value == null ? "not available" : formatRelVolume(value));
 
-function buildPrompt(
+export function buildStoryPrompt(
   symbol: string,
   story: StoryInput,
   news: StoryNewsItem[],
@@ -221,7 +223,8 @@ function buildPrompt(
           "EPS growth, trailing twelve months YoY": percentOrNull(story.fundamentals.epsGrowthTtmYoY),
           "revenue growth, quarterly YoY": percentOrNull(story.fundamentals.revenueGrowthQuarterlyYoY),
           "revenue growth, trailing twelve months YoY": percentOrNull(story.fundamentals.revenueGrowthTtmYoY),
-          "latest earnings period": story.fundamentals.latestEarningsPeriod ?? "not available",
+          "latest earnings fiscal period (not announcement date)": story.fundamentals.latestEarningsPeriod ?? "not available",
+          "business facts first observed by this application": story.fundamentals.knownAt ?? "not available",
           "latest earnings surprise": percentOrNull(story.fundamentals.latestEarningsSurprisePercent),
           "earnings result": story.fundamentals.earningsSurprise,
           "EPS growth trend": story.fundamentals.epsGrowthTrend,
@@ -236,6 +239,7 @@ function buildPrompt(
       // been summarised yet, same as every other reader of this table does.
       content: item.summary ?? item.headline,
       published: formatEtTime(item.publishedAt),
+      "published after regular-session close": isAtOrAfterClose(new Date(item.publishedAt)),
       "about this company specifically, or the wider industry": item.relatedSymbols.length <= 1 ? "company-specific" : "shared with other companies",
     })),
     // Structured metadata only — form type and SEC's own item codes, never
@@ -326,7 +330,17 @@ Return a JSON object with exactly these 8 keys:
    consistent or inconsistent with the company's earnings/growth trend, using
    the "fundamentals" figures alongside the day's price action — this is the
    one section that must connect the two, not just restate the earnings
-   result in isolation. If fundamentals is null, write exactly:
+   result in isolation. These are the latest known periodic results, not a
+   new daily event. Compare quarterly YoY growth with TTM YoY growth, then
+   reconcile that business trend with today's relative performance. Old
+   results can frame alignment or tension but cannot establish today's cause.
+   A fiscal period is not an announcement date. Never say results were
+   released today without an explicit same-day news record saying so.
+   If fundamentals is null, use available company news to explain the
+   business context and its relationship to relative performance, identifying
+   what the article supports and what it does not quantify. State that a
+   numerical earnings/growth comparison is unavailable for this session.
+   Only if neither business news nor fundamentals supports a read, use:
    "${NO_FUNDAMENTALS}"
 
 7. "peerSectorRelation" — whether today's move relates to peers or the sector
@@ -365,6 +379,12 @@ Further rules:
   same as inventing a number — it is not allowed, however small the move.
 - A section must not restate a conclusion an earlier section already reached
   — each takes its own angle on the same underlying data.
+- News published after the regular-session close cannot explain an earlier
+  regular-session price move. It may be identified as after-close context.
+- Distinguish an observed association from a plausible explanation and from
+  confirmed causation. Where a driver is unconfirmed, still explain what the
+  peer/market/volume evidence suggests and which residual remains unexplained;
+  do not replace all analysis with a generic causation disclaimer.
 - Every claim must point to a specific figure or label present in the input
   above. No outside fact, cause, or event may be introduced.
 - Never invent a fact, a number, a timestamp or a news item not in the input.
@@ -379,38 +399,12 @@ ${JSON.stringify(input, null, 2)}`;
 }
 
 async function loadDailyCloses(symbol: string, day: string): Promise<StoryDailyClose[]> {
-  const { data, error } = await db
-    .from("daily_closes")
-    .select("trading_day, close, change_percent")
-    .eq("symbol", symbol)
-    .lte("trading_day", day);
-  if (error) throw new Error(`daily_closes read for ${symbol}: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    tradingDay: row.trading_day as string,
-    close: Number(row.close),
-    changePercent: row.change_percent == null ? null : Number(row.change_percent),
-  }));
-}
-
-async function loadFundamentals(symbol: string): Promise<StoryFundamentals | null> {
-  const { data, error } = await db
-    .from("fundamentals")
-    .select(
-      "eps_growth_quarterly_yoy, eps_growth_ttm_yoy, revenue_growth_quarterly_yoy, revenue_growth_ttm_yoy, latest_earnings_period, latest_earnings_surprise_percent",
-    )
-    .eq("symbol", symbol)
-    .maybeSingle();
-  if (error) throw new Error(`fundamentals read for ${symbol}: ${error.message}`);
-  if (!data) return null;
-  return {
-    epsGrowthQuarterlyYoY: data.eps_growth_quarterly_yoy == null ? null : Number(data.eps_growth_quarterly_yoy),
-    epsGrowthTtmYoY: data.eps_growth_ttm_yoy == null ? null : Number(data.eps_growth_ttm_yoy),
-    revenueGrowthQuarterlyYoY: data.revenue_growth_quarterly_yoy == null ? null : Number(data.revenue_growth_quarterly_yoy),
-    revenueGrowthTtmYoY: data.revenue_growth_ttm_yoy == null ? null : Number(data.revenue_growth_ttm_yoy),
-    latestEarningsPeriod: data.latest_earnings_period,
-    latestEarningsSurprisePercent:
-      data.latest_earnings_surprise_percent == null ? null : Number(data.latest_earnings_surprise_percent),
-  };
+  const rows = await readAllRows<{ trading_day: string; close: number; change_percent: number | null }>(
+    `story-closes:${symbol}`, (signal, start, end) => db.from("daily_closes")
+      .select("trading_day,close,change_percent", { count: "exact" }).eq("symbol", symbol)
+      .lte("trading_day", day).order("trading_day").range(start, end).abortSignal(signal));
+  return rows.map((row) => ({ tradingDay: row.trading_day, close: Number(row.close),
+    changePercent: row.change_percent == null ? null : Number(row.change_percent) }));
 }
 
 /** Today's news for one symbol, in the shape story-input.ts needs. */
@@ -466,7 +460,10 @@ export async function generateOneStory(
   prices: Map<string, PriceRow>,
 ): Promise<void> {
   const price = prices.get(symbol);
-  if (!price) throw new Error(`${symbol}: no price_cache row`);
+  if (!price) throw new Error(`${symbol}: no price row`);
+  if (tradingDay(new Date(price.updated_at)) !== day) {
+    throw new Error(`${symbol}: price row belongs to another session, not ${day}`);
+  }
 
   const peerSymbols = PEERS[symbol] ?? [];
   // Paired with its own symbol, not just collected into a bare number list —
@@ -480,7 +477,7 @@ export async function generateOneStory(
 
   const [dailyCloses, fundamentals, news, secFilings] = await Promise.all([
     loadDailyCloses(symbol, day),
-    loadFundamentals(symbol),
+    loadStoryFundamentals(symbol, day),
     loadNews(symbol, day),
     loadFilings(symbol, day),
   ]);
@@ -510,12 +507,34 @@ export async function generateOneStory(
     secFilings,
   });
 
-  const prompt = buildPrompt(
-    symbol,
-    storyInput,
-    news,
+  const sections = await generateStorySections(storyInput,
     sectorChangePercent == null ? null : Number(sectorChangePercent),
-    marketChangePercent == null ? null : Number(marketChangePercent),
+    marketChangePercent == null ? null : Number(marketChangePercent));
+
+  const { error } = await db.from("stories").upsert(
+    {
+      symbol,
+      story_date: day,
+      sections,
+      generated_at: new Date().toISOString(),
+    },
+    { onConflict: "symbol,story_date" },
+  );
+  if (error) throw new Error(`stories upsert for ${symbol}: ${error.message}`);
+}
+
+/** The same narrative call for scheduled generation and reviewed historical replay. */
+export async function generateStorySections(
+  storyInput: StoryInput,
+  sectorChangePercent: number | null,
+  marketChangePercent: number | null,
+): Promise<StorySections> {
+  const prompt = buildStoryPrompt(
+    storyInput.symbol,
+    storyInput,
+    storyInput.news,
+    sectorChangePercent,
+    marketChangePercent,
   );
   const { data } = await generateJson<GroqModel>(prompt, {
     timeoutMs: CALL_TIMEOUT_MS,
@@ -531,22 +550,22 @@ export async function generateOneStory(
   // permanently blocks the retry path since `done` treats any existing row
   // as complete. Fail loudly instead so the caller's catch routes this
   // symbol into `failed` and a later scheduled run retries it.
-  const missingKeys: string[] = REQUIRED_STRING_KEYS.filter((key) => typeof data[key] !== "string");
-  if (typeof data.headline?.text !== "string") missingKeys.push("headline.text");
+  const missingKeys: string[] = REQUIRED_STRING_KEYS.filter((key) => (typeof data[key] !== "string" || !data[key].trim()));
+  if (typeof data.headline?.text !== "string" || !data.headline.text.trim()) missingKeys.push("headline.text");
   if (missingKeys.length > 0) {
-    throw new Error(`${symbol}: Groq response missing section(s): ${missingKeys.join(", ")}`);
+    throw new Error(`${storyInput.symbol}: Groq response missing section(s): ${missingKeys.join(", ")}`);
   }
 
   const pickedNews =
-    data.headline.newsIndex != null && news[data.headline.newsIndex]
+    data.headline.newsIndex != null && storyInput.news[data.headline.newsIndex]
       ? {
-          headline: news[data.headline.newsIndex].headline,
-          sourceUrl: news[data.headline.newsIndex].sourceUrl,
-          publishedAt: news[data.headline.newsIndex].publishedAt,
+          headline: storyInput.news[data.headline.newsIndex].headline,
+          sourceUrl: storyInput.news[data.headline.newsIndex].sourceUrl,
+          publishedAt: storyInput.news[data.headline.newsIndex].publishedAt,
         }
       : null;
 
-  const sections: StorySections = {
+  return {
     headline: { text: data.headline.text, news: pickedNews },
     comparison: data.comparison,
     classification: data.classification,
@@ -556,17 +575,6 @@ export async function generateOneStory(
     peerSectorRelation: data.peerSectorRelation,
     ytdTakeaway: data.ytdTakeaway,
   };
-
-  const { error } = await db.from("stories").upsert(
-    {
-      symbol,
-      story_date: day,
-      sections,
-      generated_at: new Date().toISOString(),
-    },
-    { onConflict: "symbol,story_date" },
-  );
-  if (error) throw new Error(`stories upsert for ${symbol}: ${error.message}`);
 }
 
 /**

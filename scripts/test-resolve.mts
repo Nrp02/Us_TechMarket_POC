@@ -26,6 +26,9 @@ const SRC = pathToFileURL(`${process.cwd()}/src/`).href;
 
 registerHooks({
   resolve(specifier, context, next) {
+    // Next's extensionless CJS entry point needs its extension in Node ESM
+    // when the historical-replay CLI imports the production generation job.
+    if (specifier === "next/cache") return next("next/cache.js", context);
     if (!specifier.startsWith("@/")) return next(specifier, context);
 
     const url = new URL(specifier.slice(2), SRC);

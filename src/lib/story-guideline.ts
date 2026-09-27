@@ -61,7 +61,14 @@ export const ANALYSIS_GUIDELINE = `Analysis guideline — how to reason, not jus
    not only the peer average. A single outlier inside an otherwise flat peer
    group is a different, more specific observation than "peers were mixed."
 
-8. Place today against Recent Trend in "unusualness": when the supplied
+8. Business facts persist between releases: use the latest known earnings
+   and growth figures as context on every session, without presenting them as
+   fresh news. Reconcile quarterly growth versus TTM growth with today's
+   stock/peer performance. A mismatch describes tension; it does not prove
+   the business deteriorated today or that the market mispriced it. Missing
+   numerical results do not erase business evidence in company news.
+
+9. Place today against Recent Trend in "unusualness": when the supplied
    10-trading-day closing-price trend is available, connect today's move to
    that direction, net window change, and confirmed reversal age. Distinguish
    continuation, a move against the trend, and no clear trend without

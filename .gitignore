@@ -58,3 +58,11 @@ next-env.d.ts
 # design pipeline, regenerable and not a source of truth. Note DESIGN.md cites
 # .impeccable/design.json as its machine-readable companion; that file is local.
 .impeccable/
+
+# Local evidence/rollback captures; authored backfill and review stay tracked.
+.scratch/narrative-audit/db-snapshot.json
+.scratch/narrative-audit/historical-inputs.json
+.scratch/narrative-audit/*-reading.txt
+.scratch/narrative-audit/*.before.json
+.scratch/narrative-audit/*.after.json
+.scratch/narrative-audit/pipeline-sample.json

@@ -14,6 +14,8 @@ import { computeRecentTrend } from "../../src/lib/trend-detection.ts";
 import { dayWindow, tradingDay } from "../../src/lib/market.ts";
 import { db } from "../../src/lib/supabase.ts";
 
+if (process.argv.includes("--write")) throw new Error("This template backfill is retired. Use scripts/backfill-story-analysis.mts with an authored, reviewed draft.");
+
 const DAYS = ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"];
 const STOCK_SYMBOLS = TOP_20.map((stock) => stock.symbol);
 const ALL_HISTORY_SYMBOLS = [...STOCK_SYMBOLS, ...INDEX_SYMBOLS];

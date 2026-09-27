@@ -25,6 +25,8 @@ export type StoryDailyClose = {
 };
 
 export type StoryFundamentals = {
+  /** Observation time, never interpreted as an earnings announcement. */
+  knownAt?: string;
   epsGrowthQuarterlyYoY: number | null;
   epsGrowthTtmYoY: number | null;
   revenueGrowthQuarterlyYoY: number | null;

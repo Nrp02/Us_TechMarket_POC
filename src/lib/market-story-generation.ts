@@ -1,6 +1,6 @@
 import { readMaybeOne, readRows } from "@/lib/db-read";
 import { generateJson, GroqRateLimitError } from "@/lib/groq";
-import { tradingDay } from "@/lib/market";
+import { dayWindow, isAtOrAfterClose, tradingDay } from "@/lib/market";
 import {
   buildMarketStoryInput,
   type MarketStoryInput,
@@ -43,7 +43,7 @@ function percentOrNull(value: number | null | undefined) {
   return value == null ? "not available" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function buildPrompt(input: MarketStoryInput): string {
+export function buildMarketStoryPrompt(input: MarketStoryInput): string {
   const promptInput = {
     "trading day": input.day,
     breadth: {
@@ -104,6 +104,7 @@ function buildPrompt(input: MarketStoryInput): string {
       index,
       content: item.summary ?? item.headline,
       published: item.publishedAt,
+      "published after regular-session close": isAtOrAfterClose(new Date(item.publishedAt)),
     })),
   };
 
@@ -158,7 +159,10 @@ Return a JSON object with exactly these 8 keys, each a string:
    "CPI's August reading" or "as of {latest reading date}"), and never
    describe a data point as "today's release" unless its date matches the
    trading day exactly. If "macro" is "no macro data available" and today is
-   not a decision day, write exactly:
+   not a decision day, reason from any dated rate/inflation news when
+   available, while stating that a numeric release comparison is unavailable.
+   Do not import today's cached macro values into an earlier session. Only
+   when neither a reading nor dated macro news supports a read, write:
    "${NO_MACRO}"
 
 7. "volatilityContext" — what the Volatility (VIXY) proxy's own move and its
@@ -213,6 +217,8 @@ Further rules:
 - A section must not restate a conclusion an earlier section already reached.
 - Every claim must point to a specific figure or label present in the input
   above. No outside fact, cause, or event may be introduced.
+- News published after the regular-session close cannot explain the earlier
+  regular-session move; identify it only as after-close context.
 - Never invent a fact, a number, a timestamp or a news item not in the input.
 - Never calculate a new number — every figure above is already final.
 - Never predict future prices, trends, or outcomes, anywhere.
@@ -235,12 +241,13 @@ breadth, sector moves, news/macro or today's VIXY change instead.`;
 }
 
 async function loadMarketNews(day: string) {
+  const { from, to } = dayWindow(day);
   const { data, error } = await db
     .from("news")
     .select("headline, source_url, published_at, news_summaries(summary)")
     .eq("related_symbols", "{}")
-    .gte("published_at", `${day}T00:00:00Z`)
-    .lt("published_at", `${day}T23:59:59Z`)
+    .gte("published_at", from)
+    .lt("published_at", to)
     .order("published_at", { ascending: false });
   if (error) throw new Error(`market news read: ${error.message}`);
   return (data ?? []).map((row) => ({
@@ -339,7 +346,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
     isHistorical
       ? getDayTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS], resolvedDay)
       : getTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS]),
-    readRows<{
+    isHistorical ? Promise.resolve([]) : readRows<{
       series_id: string;
       latest_date: string;
       latest_value: number | null;
@@ -386,7 +393,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
     }));
 
   const input = buildMarketStoryInput({ day: resolvedDay, trackedStocks, indices, indexDailyCloses, macro, news });
-  const prompt = buildPrompt(input);
+  const prompt = buildMarketStoryPrompt(input);
 
   try {
     const { data } = await generateJson<GroqModel>(prompt, {
@@ -394,6 +401,11 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
       reasoningEffort: REASONING_EFFORT,
       maxCompletionTokens: MAX_COMPLETION_TOKENS,
     });
+
+    const requiredKeys = ["overallRead", "standoutMovers", "sectorLeadership", "breadth",
+      "marketEvents", "macroContext", "volatilityContext", "closingSynthesis"] as const;
+    const missing = requiredKeys.filter((key) => typeof data[key] !== "string" || !data[key].trim());
+    if (missing.length) throw new Error(`Market Story missing section(s): ${missing.join(", ")}`);
 
     const sections: MarketStorySections = {
       overallRead: data.overallRead,

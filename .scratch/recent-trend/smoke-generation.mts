@@ -8,7 +8,7 @@ import ts from "typescript";
 import { readAllRows, readRows } from "../../src/lib/db-read.ts";
 import { formatEtTime, formatPercent, formatPrice, formatRelVolume } from "../../src/lib/format.ts";
 import { generateJson } from "../../src/lib/groq.ts";
-import { tradingDay } from "../../src/lib/market.ts";
+import { isAtOrAfterClose, tradingDay } from "../../src/lib/market.ts";
 import { buildMarketStoryInput } from "../../src/lib/market-story-input.ts";
 import { MARKET_ANALYSIS_GUIDELINE } from "../../src/lib/market-story-guideline.ts";
 import { computePeriodPerformance } from "../../src/lib/period-performance.ts";
@@ -23,7 +23,7 @@ import { INDEX_CARDS, INDEX_SYMBOLS, NAME_BY_SYMBOL, PEERS, TRACKED_STOCK_SYMBOL
 function sourceFunction(path: string, name: string, bindings: Record<string, unknown>) {
   const source = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
   const declarations = source.statements.filter((statement) =>
-    (name === "buildPrompt" && ts.isVariableStatement(statement)) ||
+    (["buildMarketStoryPrompt", "buildStoryPrompt"].includes(name) && ts.isVariableStatement(statement)) ||
     (ts.isFunctionDeclaration(statement) && [name, "percentOrNull"].includes(statement.name?.text ?? "")),
   ).map((statement) => statement.getText(source)).join("\n");
   const compiled = ts.transpileModule(declarations, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -77,8 +77,8 @@ if (mode === "stock") {
     fundamentals: null, news: [], secFilings: [],
   });
   assert.notEqual(input.recentTrend.direction, null, "NVDA needs ten stored closes");
-  const build = sourceFunction("src/lib/story-generation.ts", "buildPrompt", {
-    NAME_BY_SYMBOL, formatEtTime, formatPercent, formatPrice, formatRelVolume, ANALYSIS_GUIDELINE,
+  const build = sourceFunction("src/lib/story-generation.ts", "buildStoryPrompt", {
+    NAME_BY_SYMBOL, formatEtTime, formatPercent, formatPrice, formatRelVolume, ANALYSIS_GUIDELINE, isAtOrAfterClose,
   });
   prompt = build("NVDA", input, [], sector ? Number(sector.change_percent) : null,
     market ? Number(market.change_percent) : null);
@@ -112,7 +112,7 @@ if (mode === "stock") {
     macro: [], news: [],
   });
   assert.notEqual(input.indices.find((index) => index.symbol === "VIXY")?.recentTrend.direction, null);
-  const build = sourceFunction("src/lib/market-story-generation.ts", "buildPrompt", { MARKET_ANALYSIS_GUIDELINE });
+  const build = sourceFunction("src/lib/market-story-generation.ts", "buildMarketStoryPrompt", { MARKET_ANALYSIS_GUIDELINE, isAtOrAfterClose });
   prompt = build(input);
   trend = input.indices.map((index) => ({ symbol: index.symbol, ...index.recentTrend }));
   const unavailable = build(buildMarketStoryInput({ day, indices: [{ label: "Volatility", symbol: "VIXY", price: 100,

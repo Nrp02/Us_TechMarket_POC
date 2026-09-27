@@ -72,6 +72,9 @@ export async function generateJson<T>(
   }
 
   const choice = json.choices?.[0];
+  if (choice?.finish_reason === "length") {
+    throw new Error("Groq completion exhausted its token budget; refusing partial analysis");
+  }
   const text = choice?.message?.content;
   if (!text) {
     throw new Error(`Groq returned no content (finish_reason: ${choice?.finish_reason ?? "unknown"})`);
