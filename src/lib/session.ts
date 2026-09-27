@@ -178,13 +178,13 @@ export async function readDayTickers(symbols: string[], day: string): Promise<Ti
   if (!symbols.length) return [];
   const { from, to } = dayWindow(day);
 
-  const [closeRows, snapshotRows, avgVolRows] = await Promise.all([
-    readRows<{ symbol: string; close: number; change: number; change_percent: number }>(
+  const [closeRows, snapshotRows] = await Promise.all([
+    readRows<{ symbol: string; close: number; change: number; change_percent: number; volume: number | null; avg_volume: number | null }>(
       "day-ticker-closes",
       (signal) =>
         db
           .from("daily_closes")
-          .select("symbol, close, change, change_percent")
+          .select("symbol, close, change, change_percent, volume, avg_volume")
           .in("symbol", symbols)
           .eq("trading_day", day)
           .abortSignal(signal),
@@ -203,21 +203,19 @@ export async function readDayTickers(symbols: string[], day: string): Promise<Ti
           .range(start, end)
           .abortSignal(signal),
     ),
-    readRows<{ symbol: string; avg_volume: number | null }>(
-      "day-ticker-avgvol",
-      (signal) =>
-        db.from("price_cache").select("symbol, avg_volume").in("symbol", symbols).abortSignal(signal),
-    ),
   ]);
 
   const closeBySymbol = new Map(
     closeRows.map((row) => [
       row.symbol,
-      { close: Number(row.close), change: Number(row.change), changePercent: Number(row.change_percent) },
+      {
+        close: Number(row.close),
+        change: Number(row.change),
+        changePercent: Number(row.change_percent),
+        volume: row.volume == null ? null : Number(row.volume),
+        avgVolume: row.avg_volume == null ? null : Number(row.avg_volume),
+      },
     ]),
-  );
-  const avgVolBySymbol = new Map(
-    avgVolRows.map((row) => [row.symbol, row.avg_volume == null ? null : Number(row.avg_volume)]),
   );
 
   const bySymbol = new Map<string, { volumes: number[]; prices: number[] }>(
@@ -238,7 +236,6 @@ export async function readDayTickers(symbols: string[], day: string): Promise<Ti
       name: NAME_BY_SYMBOL.get(symbol) ?? symbol,
       dailyClose: closeBySymbol.get(symbol) ?? null,
       snapshotVolumes: bucket.volumes,
-      currentAvgVolume: avgVolBySymbol.get(symbol) ?? null,
       sparkPrices: bucket.prices,
     });
     return ticker ? [ticker] : [];

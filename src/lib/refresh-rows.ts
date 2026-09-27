@@ -28,6 +28,9 @@ export type DailyCloseRow = {
   close: number;
   change: number;
   change_percent: number;
+  /** The session's traded volume and the 10-day average it was measured against. */
+  volume: number | null;
+  avg_volume: number | null;
 };
 
 /**
@@ -87,6 +90,8 @@ export function deriveSymbolRows(input: {
           close: settled.price,
           change: settled.change,
           change_percent: settled.changePercent,
+          volume: day.volume,
+          avg_volume: avgVolume,
         }
       : null,
   };

@@ -1,77 +1,56 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildDayTicker } from "./day-ticker.ts";
+import { buildDayTicker, type DayCloseRow } from "./day-ticker.ts";
+
+const close = (over: Partial<DayCloseRow> = {}): DayCloseRow => ({
+  close: 180, change: 2, changePercent: 1.1, volume: null, avgVolume: null, ...over,
+});
 
 test("no daily_closes row for that symbol/day yields null, not a fabricated ticker", () => {
-  const ticker = buildDayTicker({
-    symbol: "NVDA",
-    name: "NVIDIA",
-    dailyClose: null,
-    snapshotVolumes: [1000, 2000],
-    currentAvgVolume: 50_000_000,
-    sparkPrices: [100, 101],
-  });
+  const ticker = buildDayTicker({ symbol: "NVDA", name: "NVIDIA", dailyClose: null, snapshotVolumes: [1000, 2000], sparkPrices: [100, 101] });
   assert.equal(ticker, null);
 });
 
-test("volume is the sum of that day's per-bar snapshots, not the last bar", () => {
+test("relative volume uses the volume and average stored with that session's close", () => {
   const ticker = buildDayTicker({
-    symbol: "NVDA",
-    name: "NVIDIA",
-    dailyClose: { close: 180, change: 2, changePercent: 1.1 },
-    snapshotVolumes: [10_000_000, 8_000_000, 12_000_000],
-    currentAvgVolume: 60_000_000,
-    sparkPrices: [178, 179, 180],
+    symbol: "NVDA", name: "NVIDIA",
+    dailyClose: close({ volume: 30_000_000, avgVolume: 60_000_000 }),
+    snapshotVolumes: [1], sparkPrices: [180],
   });
   assert.equal(ticker?.volume, 30_000_000);
-});
-
-test("relative volume divides by the CURRENT average, not a historical one", () => {
-  const ticker = buildDayTicker({
-    symbol: "NVDA",
-    name: "NVIDIA",
-    dailyClose: { close: 180, change: 2, changePercent: 1.1 },
-    snapshotVolumes: [30_000_000],
-    currentAvgVolume: 60_000_000,
-    sparkPrices: [180],
-  });
   assert.equal(ticker?.relativeVolume, 0.5);
+  assert.equal(ticker?.avgVolume, 60_000_000);
 });
 
-test("no snapshot rows for the day yields null volume and null relative volume, not zero", () => {
+// Regression: a past day used to be divided by today's 10-day average, so its
+// Significant badge could change after the fact as the average moved.
+test("a close stored without its average has unknown relative volume, never today's", () => {
   const ticker = buildDayTicker({
-    symbol: "NVDA",
-    name: "NVIDIA",
-    dailyClose: { close: 180, change: 2, changePercent: 1.1 },
-    snapshotVolumes: [],
-    currentAvgVolume: 60_000_000,
-    sparkPrices: [],
+    symbol: "NVDA", name: "NVIDIA", dailyClose: close(),
+    snapshotVolumes: [10_000_000, 8_000_000, 12_000_000], sparkPrices: [178, 179, 180],
   });
+  assert.equal(ticker?.volume, 30_000_000); // per-bar snapshots summed, not the last bar
+  assert.equal(ticker?.relativeVolume, null);
+});
+
+test("no stored volume and no snapshots yields null volume, not zero", () => {
+  const ticker = buildDayTicker({ symbol: "NVDA", name: "NVIDIA", dailyClose: close(), snapshotVolumes: [], sparkPrices: [] });
   assert.equal(ticker?.volume, null);
   assert.equal(ticker?.relativeVolume, null);
 });
 
 test("significance is reused from the shared rule, not reimplemented", () => {
-  const ticker = buildDayTicker({
-    symbol: "NVDA",
-    name: "NVIDIA",
-    dailyClose: { close: 180, change: 10, changePercent: 6 },
-    snapshotVolumes: [10_000_000],
-    currentAvgVolume: 60_000_000,
-    sparkPrices: [180],
-  });
-  assert.equal(ticker?.significant, true);
+  const byPrice = buildDayTicker({ symbol: "NVDA", name: "NVIDIA", dailyClose: close({ change: 10, changePercent: 6 }), snapshotVolumes: [], sparkPrices: [] });
+  assert.equal(byPrice?.significant, true);
+  const byVolume = buildDayTicker({ symbol: "NVDA", name: "NVIDIA", dailyClose: close({ volume: 90, avgVolume: 30 }), snapshotVolumes: [], sparkPrices: [] });
+  assert.equal(byVolume?.significant, true);
 });
 
 test("price/change/change% pass through from the stored daily_closes row exactly", () => {
   const ticker = buildDayTicker({
-    symbol: "AAPL",
-    name: "Apple",
-    dailyClose: { close: 233.45, change: -1.2, changePercent: -0.51 },
-    snapshotVolumes: [1_000_000],
-    currentAvgVolume: 40_000_000,
-    sparkPrices: [234, 233.45],
+    symbol: "AAPL", name: "Apple", dailyClose: close({ close: 233.45, change: -1.2, changePercent: -0.51 }),
+    snapshotVolumes: [1_000_000], sparkPrices: [234, 233.45],
   });
   assert.equal(ticker?.price, 233.45);
   assert.equal(ticker?.change, -1.2);

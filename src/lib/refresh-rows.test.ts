@@ -50,3 +50,17 @@ test("snapshots snap to the 15-minute grid", () => {
     { symbol: "NVDA", price: 224, volume: 1_000, snapshot_at: "2026-09-25T17:00:00.000Z" },
   ]);
 });
+
+// A past session's Rel. Volume needs the average as it stood that day; there
+// is nowhere else to get it once the next refresh overwrites price_cache.
+test("the daily close keeps that session's volume and 10-day average", () => {
+  const rows = deriveSymbolRows({
+    symbol: "NVDA",
+    quote,
+    day: { volume: 5_000, bars: fridayBars },
+    avgVolume: 10_000,
+    now: new Date("2026-09-25T20:15:00Z"),
+  });
+  assert.equal(rows.dailyClose?.volume, 5_000);
+  assert.equal(rows.dailyClose?.avg_volume, 10_000);
+});

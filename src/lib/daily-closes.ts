@@ -11,17 +11,20 @@ export type DailyClose = {
   tradingDay: string;
   close: number;
   changePercent: number | null;
+  /** Stored with the close (migration 0021); null on older rows. */
+  volume: number | null;
+  avgVolume: number | null;
 };
 
 /** Every stored close for `symbols` on or before `until`, ordered by symbol then day. */
 export async function readDailyCloses(label: string, symbols: readonly string[], until: string): Promise<DailyClose[]> {
   if (!symbols.length) return [];
-  const rows = await readAllRows<{ symbol: string; trading_day: string; close: number; change_percent: number | null }>(
+  const rows = await readAllRows<{ symbol: string; trading_day: string; close: number; change_percent: number | null; volume: number | null; avg_volume: number | null }>(
     label,
     (signal, start, end) =>
       db
         .from("daily_closes")
-        .select("symbol, trading_day, close, change_percent", { count: "exact" })
+        .select("symbol, trading_day, close, change_percent, volume, avg_volume", { count: "exact" })
         .in("symbol", [...symbols])
         .lte("trading_day", until)
         .order("symbol", { ascending: true })
@@ -34,5 +37,7 @@ export async function readDailyCloses(label: string, symbols: readonly string[],
     tradingDay: row.trading_day,
     close: Number(row.close),
     changePercent: row.change_percent == null ? null : Number(row.change_percent),
+    volume: row.volume == null ? null : Number(row.volume),
+    avgVolume: row.avg_volume == null ? null : Number(row.avg_volume),
   }));
 }
