@@ -74,7 +74,12 @@ export default async function Market({
   );
 
   return (
-    <div className="page-enter flex flex-col gap-10 pb-10">
+    // Keyed on the day: the arrival animations are one-shot CSS keyframes that
+    // play on mount, and a ?date= change re-renders this same route, so React
+    // kept the old nodes and only the few whose own keys changed replayed —
+    // some charts redrew and the rest sat still. A new key remounts the page,
+    // the same as navigating to it.
+    <div key={currentDay} className="page-enter flex flex-col gap-10 pb-10">
       <h1 className="sr-only">
         {session
           ? `Market session of ${formatDayLong(session.day)}`

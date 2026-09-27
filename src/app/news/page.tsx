@@ -129,7 +129,12 @@ export default async function News({
     // gap-10, matching Home and Today's Activity. The three routes ran 40 / 40
     // / 24 for the same relationship, which is legible as News feeling 40%
     // tighter than the other two without a visitor being able to name why.
-    <div className="page-enter flex flex-col gap-10 pb-10">
+    // Keyed on the day: the arrival animations are one-shot CSS keyframes that
+    // play on mount, and a ?date= change re-renders this same route, so React
+    // kept the old nodes and only the few whose own keys changed replayed —
+    // some charts redrew and the rest sat still. A new key remounts the page,
+    // the same as navigating to it.
+    <div key={resolved.isAll ? "all" : (resolved.date ?? today)} className="page-enter flex flex-col gap-10 pb-10">
       {/* This page's h1 was 24px while Home's ran to 52px, so the two pages
           opened at completely different ranks. Both are the one display element
           on their surface and both take the display step. */}
