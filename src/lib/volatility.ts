@@ -6,9 +6,11 @@
 export type RangeLabel = "near-high" | "near-low" | "mid-range";
 
 export type RangePosition = {
-  /** 0 = at the trailing low, 1 = at the trailing high. */
   position: number | null;
   label: RangeLabel | null;
+  /** The range itself, so a chart draws exactly what the position was measured against. */
+  min: number | null;
+  max: number | null;
 };
 
 const RANGE_LOW_THRESHOLD = 1 / 3;
@@ -36,23 +38,28 @@ export function computeVolatilityPercentile(
 }
 
 /**
- * Where `price` sits within the min/max of `historicalCloses` (the trailing
- * ~52-week window backing daily_closes), as a 0-1 position plus a fixed label.
+ * Where `price` sits within the trailing range (the ~52-week window backing
+ * daily_closes), as a 0-1 position plus a fixed label and the range's ends.
+ *
+ * `price` counts as part of its own window: a session that closes beyond every
+ * stored close IS the new high or low, not "104% of the range" — which is what
+ * the prompt used to say while the chart beside it clamped the same price.
  *
  * Null when the range has no width — one stored close, or a flat year where
  * every close is identical — rather than dividing by zero. Also null with no
  * history at all.
  */
 export function computeRangePosition(price: number, historicalCloses: number[]): RangePosition {
-  if (historicalCloses.length === 0) return { position: null, label: null };
+  const none = { position: null, label: null, min: null, max: null };
+  if (historicalCloses.length === 0) return none;
 
-  const min = Math.min(...historicalCloses);
-  const max = Math.max(...historicalCloses);
-  if (max === min) return { position: null, label: null };
+  const min = Math.min(price, ...historicalCloses);
+  const max = Math.max(price, ...historicalCloses);
+  if (max === min) return none;
 
   const position = (price - min) / (max - min);
   const label: RangeLabel =
     position >= RANGE_HIGH_THRESHOLD ? "near-high" : position <= RANGE_LOW_THRESHOLD ? "near-low" : "mid-range";
 
-  return { position, label };
+  return { position, label, min, max };
 }

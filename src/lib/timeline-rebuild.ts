@@ -1,4 +1,4 @@
-import { loadDayDataBatch } from "@/lib/day-data";
+import { type DayDataBatch, loadDayDataBatch } from "@/lib/day-data";
 import { db } from "@/lib/supabase";
 import { buildTimeline } from "@/lib/timeline";
 
@@ -8,8 +8,8 @@ import { buildTimeline } from "@/lib/timeline";
 // Called from two places, on purpose: the intraday refresh route (so the
 // timeline exists while the session is still running) and the end-of-day
 // summary job (which needs the same day data for its prompt anyway, and so
-// keeps its own copy of this loop). Rebuilding is free of AI and upstream calls,
-// which is what makes running it repeatedly reasonable.
+// passes it in rather than reading it twice). Rebuilding is free of AI and
+// upstream calls, which is what makes running it repeatedly reasonable.
 
 export type TimelineRow = {
   symbol: string;
@@ -72,19 +72,29 @@ export async function writeTimelines(
  * are the extremes so far, and the close only appears once a snapshot actually
  * lands at or after the bell. Calling it again an hour later supersedes all of
  * that with the same rules applied to more data.
+ *
+ * `data` is the day already loaded by a caller that needs it anyway; `skip` is
+ * checked just before each symbol, so a time budget can drop the rebuilds
+ * nobody is waiting on (reported in `skipped`, never written).
  */
 export async function rebuildTimelines(
   symbols: string[],
   day: string,
-): Promise<{ timelines: string[]; failed: string[] }> {
-  const { bySymbol, truncated } = await loadDayDataBatch(symbols, day);
+  options: { data?: DayDataBatch; skip?: (symbol: string) => boolean } = {},
+): Promise<{ timelines: string[]; skipped: string[]; failed: string[] }> {
+  const { bySymbol, truncated } = options.data ?? (await loadDayDataBatch(symbols, day));
 
   const timelines: string[] = [];
+  const skipped: string[] = [];
   const failed: string[] = [...truncated];
   const symbolsToWrite: string[] = [];
   const rows: TimelineRow[] = [];
 
   for (const symbol of symbols) {
+    if (options.skip?.(symbol)) {
+      skipped.push(symbol);
+      continue;
+    }
     try {
       const data = bySymbol.get(symbol);
 
@@ -110,5 +120,5 @@ export async function rebuildTimelines(
 
   await writeTimelines(symbolsToWrite, day, rows);
 
-  return { timelines, failed };
+  return { timelines, skipped, failed };
 }

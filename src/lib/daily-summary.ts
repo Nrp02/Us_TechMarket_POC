@@ -11,15 +11,12 @@ import {
 } from "@/lib/format";
 import { generateJson, SAFETY_RULES } from "@/lib/gemini";
 import { tradingDay } from "@/lib/market";
-import { isSignificant, relativeVolume } from "@/lib/significance";
+import { firedBranches, isSignificant } from "@/lib/significance";
 import { db } from "@/lib/supabase";
+import { readSessionTickers, type Ticker } from "@/lib/session";
 import { NAME_BY_SYMBOL, TOP_20_SYMBOLS } from "@/lib/symbols";
-import { buildTimeline, type Snapshot } from "@/lib/timeline";
-import {
-  timelineRowsFor,
-  writeTimelines,
-  type TimelineRow,
-} from "@/lib/timeline-rebuild";
+import type { Snapshot } from "@/lib/timeline";
+import { rebuildTimelines } from "@/lib/timeline-rebuild";
 
 // The end-of-day batch job behind Today's Activity. For each of the Top 20 it
 // refreshes the earnings calendar, rebuilds the day's timeline from stored
@@ -145,16 +142,6 @@ type Model = {
 const NO_EXPLANATION =
   "The available information does not establish a clear explanation for this movement.";
 
-type PriceRow = {
-  price: number;
-  change: number;
-  change_percent: number;
-  volume: number | null;
-  avg_volume: number | null;
-  updated_at: string;
-};
-
-
 /**
  * The structured input for one stock.
  *
@@ -170,7 +157,7 @@ type SummaryInput = ReturnType<typeof buildInput>;
 function buildInput(args: {
   symbol: string;
   day: string;
-  price: PriceRow;
+  price: Ticker;
   snapshots: Snapshot[];
   news: { headline: string; summary: string | null; publishedAt: string }[];
   events: { type: string; date: string; note: string | null }[];
@@ -179,8 +166,8 @@ function buildInput(args: {
 }) {
   const { symbol, day, price, snapshots, news, events } = args;
 
-  const changePercent = Number(price.change_percent);
-  const relVolume = relativeVolume(price.volume, price.avg_volume);
+  const changePercent = price.changePercent;
+  const relVolume = price.relativeVolume;
 
   const prices = snapshots.map((s) => s.price);
   const extreme = (pick: (values: number[]) => number) =>
@@ -188,12 +175,7 @@ function buildInput(args: {
 
   // Which branch of the shared rule fired, named outright so the model can state
   // the reason without working it back out of the thresholds itself.
-  const triggers: string[] = [];
-  if (Math.abs(changePercent) >= 5) triggers.push("price change of 5% or more");
-  if (relVolume != null && relVolume >= 2.5)
-    triggers.push("relative volume of 2.5x or more");
-  if (Math.abs(changePercent) >= 3 && (relVolume ?? 0) >= 1.5)
-    triggers.push("price change of 3% or more together with relative volume of 1.5x or more");
+  const triggers = firedBranches(changePercent, relVolume);
 
   return {
     symbol,
@@ -204,8 +186,8 @@ function buildInput(args: {
       // label verbatim despite being told not to, so these are worded to read
       // acceptably when it does ("a change of +3.01" rather than "a change in
       // dollars of +3.01").
-      "closing price": formatPrice(Number(price.price)),
-      "change": formatChange(Number(price.change)),
+      "closing price": formatPrice(price.price),
+      "change": formatChange(price.change),
       "percent change": formatPercent(changePercent),
       "direction": changePercent >= 0 ? "up" : "down",
       "session open": extreme((v) => v[0]),
@@ -213,9 +195,9 @@ function buildInput(args: {
       "session low": extreme((v) => Math.min(...v)),
     },
     volume: {
-      "shares traded today": price.volume ? `${formatVolume(Number(price.volume))} shares` : null,
-      "10-day average volume": price.avg_volume
-        ? `${formatVolume(Number(price.avg_volume))} shares`
+      "shares traded today": price.volume ? `${formatVolume(price.volume)} shares` : null,
+      "10-day average volume": price.avgVolume
+        ? `${formatVolume(price.avgVolume)} shares`
         : null,
       "volume versus average": relVolume == null
         ? null
@@ -346,33 +328,26 @@ async function syncEvents(symbol: string) {
 }
 
 /**
- * `day` exists for manual triggers and backfills — the schedule always runs on
- * the current New York trading day. A backfill is still gated by the same
- * staleness check below, so it cannot pair one day's date with another day's
- * prices.
+ * `day` exists for manual triggers; omitted, it is the newest session the
+ * snapshots record. Only the live session is summarised — a past day has no
+ * price cache to read — so a backfill for another day reports every stock
+ * stale rather than pairing one day's date with another day's prices.
  */
 export async function generateDailySummaries(
-  day: string = tradingDay(),
+  requestedDay?: string,
 ): Promise<DailySummaryResult> {
   const startedJobAt = Date.now();
 
-  // Through readRows, not bare `{ data }`: a failed read must throw rather
-  // than arrive as an empty done-set (re-spending AI calls on finished stocks)
-  // or an empty price map (every stock reported stale).
-  const [doneRows, priceRows] = await Promise.all([
-    readRows<{ symbol: string }>("daily-summary-done", (signal) =>
-      db.from("daily_summaries").select("symbol").eq("summary_date", day).abortSignal(signal),
-    ),
-    readRows<PriceRow & { symbol: string }>("daily-summary-prices", (signal) =>
-      db
-        .from("price_cache")
-        .select("symbol, price, change, change_percent, volume, avg_volume, updated_at")
-        .abortSignal(signal),
-    ),
-  ]);
+  const session = await readSessionTickers([...TOP_20_SYMBOLS, SECTOR_SYMBOL, MARKET_SYMBOL], requestedDay);
+  const day = session.day;
+  const prices = session.isLive ? session.tickers : new Map<string, Ticker>();
 
+  // Through readRows, not bare `{ data }`: a failed read must throw rather
+  // than arrive as an empty done-set (re-spending AI calls on finished stocks).
+  const doneRows = await readRows<{ symbol: string }>("daily-summary-done", (signal) =>
+    db.from("daily_summaries").select("symbol").eq("summary_date", day).abortSignal(signal),
+  );
   const done = new Set(doneRows.map((r) => r.symbol));
-  const prices = new Map(priceRows.map((r) => [r.symbol, r]));
 
   const result: DailySummaryResult = {
     tradingDay: day,
@@ -387,8 +362,8 @@ export async function generateDailySummaries(
     failed: [],
   };
 
-  const sectorChange = prices.get(SECTOR_SYMBOL)?.change_percent ?? null;
-  const marketChange = prices.get(MARKET_SYMBOL)?.change_percent ?? null;
+  const sectorChange = prices.get(SECTOR_SYMBOL)?.changePercent ?? null;
+  const marketChange = prices.get(MARKET_SYMBOL)?.changePercent ?? null;
 
   // Every Top 20 stock, not just a watchlist. The watchlist is per-visitor now,
   // so at generation time the server cannot know which stocks anyone will ask
@@ -397,11 +372,10 @@ export async function generateDailySummaries(
   // lands on a page with no summary on it.
   const active: string[] = [];
   for (const symbol of TOP_20_SYMBOLS) {
-    const price = prices.get(symbol);
-    // A holiday leaves yesterday's quote sitting in the cache. Writing a summary
-    // for today from it would date the previous session's numbers to the wrong
-    // day, so the symbol is skipped until a refresh has actually run.
-    if (!price || tradingDay(new Date(price.updated_at)) !== day) {
+    // readSessionTickers leaves out any symbol not refreshed since this
+    // session opened, so a quote left over from an earlier session is never
+    // dated to this one.
+    if (!prices.has(symbol)) {
       result.stale.push(symbol);
       continue;
     }
@@ -434,42 +408,15 @@ export async function generateDailySummaries(
   // budget here instead of on the call. The batch goes first so that if the
   // deadline does bite, what gets dropped is a rebuild nobody is waiting on.
   const ordered = [...batch, ...active.filter((symbol) => !inBatch.has(symbol))];
-  const { bySymbol: dayData, truncated } = await loadDayDataBatch(ordered, day);
-  result.failed.push(...truncated);
-
-  const symbolsToWrite: string[] = [];
-  const timelineRows: TimelineRow[] = [];
-
-  for (const symbol of ordered) {
-    if (!inBatch.has(symbol) && Date.now() - startedJobAt > TIMELINE_DEADLINE_MS) {
-      result.timelinesSkipped.push(symbol);
-      continue;
-    }
-
-    try {
-      const data = dayData.get(symbol);
-
-      // No snapshots means nothing to rebuild from; leave whatever is stored
-      // rather than deleting a good timeline and writing an empty one.
-      if (!data || !data.snapshots.length) continue;
-
-      const rows = buildTimeline(
-        data.snapshots,
-        data.news.map((n) => ({ at: new Date(n.publishedAt), headline: n.headline })),
-      );
-      if (!rows.length) continue;
-
-      symbolsToWrite.push(symbol);
-      timelineRows.push(...timelineRowsFor(symbol, day, rows));
-      result.timelines.push(symbol);
-    } catch (error) {
-      result.failed.push(
-        `${symbol} timeline: ${error instanceof Error ? error.message : "failed"}`,
-      );
-    }
-  }
-
-  await writeTimelines(symbolsToWrite, day, timelineRows);
+  const dayDataBatch = await loadDayDataBatch(ordered, day);
+  const dayData = dayDataBatch.bySymbol;
+  const rebuilt = await rebuildTimelines(ordered, day, {
+    data: dayDataBatch,
+    skip: (symbol) => !inBatch.has(symbol) && Date.now() - startedJobAt > TIMELINE_DEADLINE_MS,
+  });
+  result.timelines.push(...rebuilt.timelines);
+  result.timelinesSkipped.push(...rebuilt.skipped);
+  result.failed.push(...rebuilt.failed);
 
   if (!batch.length) return result;
 
@@ -504,8 +451,8 @@ export async function generateDailySummaries(
         snapshots: data.snapshots,
         news: data.news,
         events: entry.events,
-        sectorChange: sectorChange == null ? null : Number(sectorChange),
-        marketChange: marketChange == null ? null : Number(marketChange),
+        sectorChange,
+        marketChange,
       }),
     );
   }

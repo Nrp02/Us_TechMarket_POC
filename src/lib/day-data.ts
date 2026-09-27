@@ -1,4 +1,5 @@
 import { readRowsWithCount } from "@/lib/db-read";
+import { readDayNews } from "@/lib/day-news";
 import { dayWindow, tradingDay } from "@/lib/market";
 import { db } from "@/lib/supabase";
 import type { Snapshot } from "@/lib/timeline";
@@ -42,7 +43,9 @@ export async function loadDayDataBatch(
   // job can finish its work and carry the problem out in its response, where a
   // page cannot, so this keeps the `truncated` contract its two callers already
   // collect (timeline-rebuild.ts and daily-summary.ts).
-  const [snapshotResult, newsResult] = await Promise.all([
+  // The news half pages past the row ceiling (see day-news.ts), so only the
+  // snapshot read can still come back short.
+  const [snapshotResult, newsItems] = await Promise.all([
     readRowsWithCount<Record<string, unknown>>("day-snapshots", (signal) =>
       db
         .from("intraday_snapshots")
@@ -53,22 +56,8 @@ export async function loadDayDataBatch(
         .order("snapshot_at", { ascending: true })
         .abortSignal(signal),
     ),
-    readRowsWithCount<Record<string, unknown>>("day-news", (signal) =>
-      db
-        .from("news")
-        .select("related_symbols, headline, published_at, news_summaries(summary)", {
-          count: "exact",
-        })
-        .overlaps("related_symbols", symbols)
-        .gte("published_at", from)
-        .lt("published_at", to)
-        .order("published_at", { ascending: false })
-        .abortSignal(signal),
-    ),
+    readDayNews({ symbols }, day),
   ]);
-
-  const snapshotRows = snapshotResult.rows;
-  const newsRows = newsResult.rows;
 
   // PostgREST caps a response at its max-rows setting (1000 by default) and
   // says nothing when it does — the reply is simply short. Batching made that
@@ -79,22 +68,17 @@ export async function loadDayDataBatch(
   // failure. Measured at 671 rows for 20 symbols on a normal session, so this
   // is headroom monitoring, not an expected path.
   const truncated: string[] = [];
-  for (const [table, result] of [
-    ["intraday_snapshots", snapshotResult],
-    ["news", newsResult],
-  ] as const) {
-    if (result.count != null && result.count > result.rows.length) {
-      truncated.push(
-        `${table}: row cap hit — ${result.rows.length} of ${result.count} rows returned, so timelines would be rebuilt from partial data`,
-      );
-    }
+  if (snapshotResult.count != null && snapshotResult.count > snapshotResult.rows.length) {
+    truncated.push(
+      `intraday_snapshots: row cap hit — ${snapshotResult.rows.length} of ${snapshotResult.count} rows returned, so timelines would be rebuilt from partial data`,
+    );
   }
 
   const bySymbol = new Map<string, { snapshots: Snapshot[]; news: DayNews[] }>(
     symbols.map((symbol) => [symbol, { snapshots: [], news: [] }]),
   );
 
-  for (const row of snapshotRows ?? []) {
+  for (const row of snapshotResult.rows) {
     const at = new Date(row.snapshot_at as string);
     if (tradingDay(at) !== day) continue;
     bySymbol.get(row.symbol as string)?.snapshots.push({
@@ -104,19 +88,9 @@ export async function loadDayDataBatch(
     });
   }
 
-  for (const row of newsRows ?? []) {
-    if (tradingDay(new Date(row.published_at as string)) !== day) continue;
-    const item: DayNews = {
-      headline: row.headline as string,
-      // news_id is news_summaries' primary key, so PostgREST embeds a single
-      // object here even though the client's inferred type says array.
-      summary:
-        (row.news_summaries as unknown as { summary: string } | null)?.summary ?? null,
-      publishedAt: row.published_at as string,
-    };
-    for (const symbol of (row.related_symbols as string[] | null) ?? []) {
-      bySymbol.get(symbol)?.news.push(item);
-    }
+  for (const item of newsItems) {
+    const news: DayNews = { headline: item.headline, summary: item.summary, publishedAt: item.publishedAt };
+    for (const symbol of item.relatedSymbols) bySymbol.get(symbol)?.news.push(news);
   }
 
   return { bySymbol, truncated };

@@ -4,6 +4,8 @@ import { SectionCard } from "@/components/section-card";
 import { SectionHeading } from "@/components/section-heading";
 import { ComparisonBars, RangeBar, YtdChart } from "@/components/story-charts";
 import { formatEtTime } from "@/lib/format";
+import { ytdSeries } from "@/lib/period-performance";
+import { computeRangePosition } from "@/lib/volatility";
 import type { Activity } from "@/lib/queries";
 
 // The page's centrepiece, replacing the old 3-field AI Daily Summary. Same
@@ -23,27 +25,21 @@ import type { Activity } from "@/lib/queries";
 // The text+chart card itself (SectionCard) is shared with Market Story —
 // see section-card.tsx.
 
-/** Undefined when there isn't a real trailing range to plot — never a flat line. */
+/**
+ * Undefined when there isn't a real trailing range to plot — never a flat
+ * line. The range is the prompt's own (computeRangePosition), so the dot sits
+ * where the sentence beside it says it does.
+ */
 function rangeChart(dailyCloses: Activity["dailyCloses"], currentPrice: number): ReactNode {
-  if (dailyCloses.length === 0) return undefined;
-  const closes = dailyCloses.map((row) => row.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  if (min === max) return undefined;
-  return <RangeBar min={min} max={max} current={currentPrice} />;
+  const range = computeRangePosition(currentPrice, dailyCloses.map((row) => row.close));
+  if (range.min == null || range.max == null) return undefined;
+  return <RangeBar min={range.min} max={range.max} current={currentPrice} />;
 }
 
-/** Undefined before there are at least two of this year's closes to draw a line from. */
-function ytdChart(dailyCloses: Activity["dailyCloses"]): ReactNode {
-  if (dailyCloses.length === 0) return undefined;
-  // The array isn't guaranteed sorted, so the year is read off the newest row
-  // rather than assumed from the first element.
-  const newestYear = dailyCloses
-    .reduce((newest, row) => (row.tradingDay > newest.tradingDay ? row : newest))
-    .tradingDay.slice(0, 4);
-  const ytdCloses = dailyCloses.filter((row) => row.tradingDay.slice(0, 4) === newestYear);
-  if (ytdCloses.length < 2) return undefined;
-  return <YtdChart closes={ytdCloses} />;
+/** Undefined before there are two points to draw — the span the YTD figure measures. */
+function ytdChart(dailyCloses: Activity["dailyCloses"], day: string, currentPrice: number): ReactNode {
+  const series = ytdSeries(dailyCloses, day, currentPrice);
+  return series.length < 2 ? undefined : <YtdChart closes={series} />;
 }
 
 export function TodaysStory({ activity }: { activity: Activity }) {
@@ -163,7 +159,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
 
       <section>
         <SectionHeading>Year-to-Date</SectionHeading>
-        <SectionCard text={story.sections.ytdTakeaway} chart={ytdChart(dailyCloses)} />
+        <SectionCard text={story.sections.ytdTakeaway} chart={ytdChart(dailyCloses, activity.sessionDay, ticker.price)} />
       </section>
     </>
   );

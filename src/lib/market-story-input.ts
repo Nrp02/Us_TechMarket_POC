@@ -124,10 +124,7 @@ export function buildMarketStoryInput(params: MarketStoryInputParams): MarketSto
       rangePosition: rangePosition.position,
       rangeLabel: rangePosition.label,
       recentTrend: computeRecentTrend(closes),
-      periodPerformance: computePeriodPerformance([
-        ...closes.filter((row) => row.tradingDay < day).map((row) => ({ tradingDay: row.tradingDay, close: row.close })),
-        { tradingDay: day, close: index.price },
-      ], day),
+      periodPerformance: computePeriodPerformance(closes, day, index.price),
     };
   });
 

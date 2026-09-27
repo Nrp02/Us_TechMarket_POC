@@ -76,7 +76,7 @@ export type StoryInputParams = {
   marketChangePercent: number | null;
   /** Up to 370 days, any order, may or may not include today's own row. */
   dailyCloses: StoryDailyClose[];
-  /** Reused from queries.ts's existing computePeriodPerformance call, not rebuilt here. */
+  /** Through the session's own price — the same computePeriodPerformance rule the page uses. */
   periodPerformance: PeriodPerformance;
   /** Null when `fundamentals` has no row yet for this symbol. */
   fundamentals: StoryFundamentals | null;
@@ -95,6 +95,9 @@ export type StoryInput = {
   price: { price: number; changePercent: number; relativeVolume: number | null };
   significance: { score: number; significant: boolean };
   peers: PeerComparison & { symbols: string[]; breakdown: StoryPeerMove[] };
+  /** The XLK / SPY moves the divergence below is measured against. */
+  sectorChangePercent: number | null;
+  marketChangePercent: number | null;
   divergence: Divergence;
   movementClassification: MovementClassification;
   volatility: {
@@ -164,6 +167,8 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
       symbols: peerSymbols,
       breakdown: peerBreakdown,
     },
+    sectorChangePercent,
+    marketChangePercent,
     divergence,
     movementClassification: classifyMovement(divergence.vsMarketPercent),
     volatility: {

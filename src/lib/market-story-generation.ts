@@ -1,13 +1,16 @@
 import { generateValidatedAnalysis } from "@/lib/story-analysis-call";
-import { analysisSchema, validatePublishedFigures, hasSuppliedPercent, runAllChecks } from "@/lib/story-analysis-quality";
+import { type AnalysisPrompt, analysisSchema, normalizeDashes, requireSections, runAllChecks, selectTopArticles, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
+import { MARKET_SECTION_KEYS, type MarketStorySections } from "@/lib/story-sections";
 import { readMaybeOne, readRows } from "@/lib/db-read";
 import { GroqRateLimitError } from "@/lib/groq";
-import { dayWindow, isAtOrAfterClose, tradingDay, sessionDayTimes } from "@/lib/market";
+import { readDayNews } from "@/lib/day-news";
+import { isAtOrAfterClose, sessionDayTimes } from "@/lib/market";
 import {
   buildMarketStoryInput,
   type MarketStoryInput,
 } from "@/lib/market-story-input";
-import { getDayTickers, getIndexDailyCloses, getTickers } from "@/lib/queries";
+import { readDailyCloses } from "@/lib/daily-closes";
+import { readSessionTickers } from "@/lib/session";
 import { db } from "@/lib/supabase";
 import { INDEX_CARDS, INDEX_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 import { MARKET_ANALYSIS_GUIDELINE } from "@/lib/market-story-guideline";
@@ -20,34 +23,32 @@ import { SIGNIFICANCE_RULE_TEXT } from "@/lib/significance";
 // post-close schedule tick Today's Story uses (see /api/story/route.ts) —
 // no new cron entry for one call.
 
-export type MarketStorySections = {
-  overallRead: string;
-  standoutMovers: string;
-  sectorLeadership: string;
-  breadth: string;
-  marketEvents: string;
-  macroContext: string;
-  volatilityContext: string;
-  closingSynthesis: string;
-};
-
 type GroqModel = MarketStorySections;
 
+const TODAY_ONLY = "Analyze this session only. Never mention recent trend, uptrend, downtrend, window change or reversal; those belong only in volatilityContext.";
+
+/** Per-section scope, enforced in the output schema as well as the prompt. */
+const MARKET_SECTION_DESCRIPTIONS: Record<string, string> = {
+  overallRead: TODAY_ONLY,
+  standoutMovers: TODAY_ONLY,
+  sectorLeadership: TODAY_ONLY,
+  breadth: TODAY_ONLY,
+  marketEvents: TODAY_ONLY,
+  macroContext: TODAY_ONLY,
+  volatilityContext: "Include VIXY exact supplied trend direction, signed net window change, latest swing-point age and today's comparison. Interpret with daily breadth; this is the ONLY field for recent trend.",
+  closingSynthesis: "Year-to-date: tech since the start of the year (yearToDateContextOnly) and whether today fits it. Never mention recent trend, uptrend, downtrend, window change or reversal.",
+};
 
 function percentOrNull(value: number | null | undefined) {
   return value == null ? "not available" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-const MARKET_SECTION_KEYS = ["overallRead", "standoutMovers", "sectorLeadership", "breadth",
-  "marketEvents", "macroContext", "volatilityContext", "closingSynthesis"] as const;
 export function selectMarketNews(input: MarketStoryInput) {
-  return input.news.map((item, index) => ({ item, index })).sort((a, b) => {
-    const score = (text: string) => /fed|fomc|interest rate|inflation|cpi|gdp|unemployment|treasury|tariff|trade|sanction|oil|energy|central bank|court|regulat/i.test(text) ? 1 : 0;
-    return score(b.item.headline + " " + b.item.summary) - score(a.item.headline + " " + a.item.summary) || a.index - b.index;
-  }).slice(0, 6).sort((a, b) => a.index - b.index);
+  return selectTopArticles(input.news, (item) =>
+    /fed|fomc|interest rate|inflation|cpi|gdp|unemployment|treasury|tariff|trade|sanction|oil|energy|central bank|court|regulat/i.test(item.headline + " " + item.summary) ? 1 : 0);
 }
 
-export function buildMarketStoryPrompt(input: MarketStoryInput): string {
+export function buildMarketStoryPrompt(input: MarketStoryInput): AnalysisPrompt {
   const vixy = input.indices.find((i) => i.symbol === "VIXY");
   const trend = vixy?.recentTrend;
   const promptInput = {
@@ -126,7 +127,7 @@ export function buildMarketStoryPrompt(input: MarketStoryInput): string {
     })),
   };
 
-  return `INSTRUCTIONS
+  return { input: promptInput, instructions: `INSTRUCTIONS
 Write the Market Story for the tracked US technology sample. The reader already
 sees the numbers; each card must answer its question with reasons. Use only the
 Input. Copy figures exactly with their signs; do not compute new numbers. No
@@ -180,28 +181,7 @@ FINAL CHECKS (re-read every card against the Input before returning)
 5. Missing macro data stays unknown: never "no data were released".
 6. No motives, flows, forecasts or advice. Each card says something no other
    card says.
-
-Input:
-${JSON.stringify(promptInput)}`;
-}
-
-async function loadMarketNews(day: string) {
-  const { from, to } = dayWindow(day);
-  const { data, error } = await db
-    .from("news")
-    .select("headline, source_url, published_at, news_summaries(summary), news_evidence(source_text)")
-    .eq("related_symbols", "{}")
-    .gte("published_at", from)
-    .lt("published_at", to)
-    .order("published_at", { ascending: false });
-  if (error) throw new Error(`market news read: ${error.message}`);
-  return (data ?? []).filter((row) => tradingDay(new Date(row.published_at as string)) === day).map((row) => ({
-    headline: row.headline as string,
-    sourceText: (row.news_evidence as unknown as { source_text: string } | null)?.source_text ?? null,
-    summary: (row.news_summaries as unknown as { summary: string } | null)?.summary ?? null,
-    sourceUrl: row.source_url as string,
-    publishedAt: row.published_at as string,
-  }));
+` };
 }
 
 export type MarketStoryResult =
@@ -211,62 +191,18 @@ export type MarketStoryResult =
   | { status: "failed"; message: string };
 
 /**
- * The most recent session that actually produced snapshots, as an ET date —
- * market-wide counterpart to queries.ts's getLatestSessionDay(symbol). Read
- * from the data rather than assumed from the clock: before the market opens
- * (or over a weekend), `tradingDay()` already names the new calendar day
- * while price_cache/intraday_snapshots still hold the last closed session's
- * figures — defaulting to the clock would write today's date on numbers that
- * describe yesterday. Caught by a real spot-check: a first pass of this job
- * did exactly that in pre-market hours and had to be re-run after this fix.
+ * `day` exists for manual triggers, mirroring story-generation.ts. Omitted,
+ * it is the newest session the snapshots record — resolved from the data,
+ * not the clock: before the open or over a weekend the calendar has already
+ * moved on while the stored figures still describe the last session, and a
+ * first pass of this job wrote today's date on yesterday's numbers.
  *
- * Through readRows rather than a bare `{ data }` destructure — this
- * function exists specifically to not trust the clock over the data, so a
- * swallowed read failure here would silently reintroduce the exact bug it
- * was written to fix (falling back to tradingDay()). See CLAUDE.md's "A
- * transient read was cached as 'no data'" for why a failed read must throw
- * rather than degrade to an empty/default answer.
- */
-async function latestMarketSessionDay(): Promise<string> {
-  const rows = await readRows<{ snapshot_at: string }>(
-    "market-story:latest-session-day",
-    (signal) =>
-      db
-        .from("intraday_snapshots")
-        .select("snapshot_at")
-        .order("snapshot_at", { ascending: false })
-        .limit(1)
-        .abortSignal(signal),
-  );
-  return rows[0] ? tradingDay(new Date(rows[0].snapshot_at)) : tradingDay();
-}
-
-/**
- * `day` exists for manual triggers, mirroring story-generation.ts. The
- * schedule always runs on the current New York trading day — resolved from
- * the data, not the clock; see latestMarketSessionDay above.
- *
- * Reasoning effort/token ceiling reuse story-generation.ts's own "low"/4500
- * tuning. Measured live against production (real breadth/index/macro data,
- * no market news that day): 1,935 total tokens, 498 completion tokens —
- * comfortably inside both the completion ceiling and Groq's 8,000 TPM
- * budget alongside Today's Story's own calls in the same scheduled tick. A
- * busier news day will cost more (news content is passed through verbatim,
- * same as Today's Story), but has the same headroom to spend.
+ * Reasoning effort and token ceiling are the shared analysis call's
+ * ("medium"/4500, story-analysis-call.ts); this job adds none of its own.
  */
 export async function generateMarketStory(day?: string): Promise<MarketStoryResult> {
-  const latestDay = await latestMarketSessionDay();
-  const resolvedDay = day ?? latestDay;
-  // A manually-triggered backfill for a day that isn't the current session:
-  // price_cache holds only the single latest snapshot per symbol, so reading
-  // it for an earlier day silently mislabels today's change% as that day's.
-  // Confirmed live: on 2026-09-26, price_cache's SPY change_percent (today's
-  // +0.54%) doesn't just differ in magnitude from 2026-09-22's real daily_closes
-  // change_percent (-0.02%) — the sign flips. getDayTickers is the same fix
-  // queries.ts already applies for Today's Activity's historical view
-  // (queries.ts:876-880) — same Ticker shape, sourced from daily_closes/
-  // intraday_snapshots instead of the live cache.
-  const isHistorical = resolvedDay !== tradingDay();
+  const session = await readSessionTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS], day);
+  const resolvedDay = session.day;
   const existing = await readMaybeOne<{ story_date: string }>(
     "market-story:existing",
     (signal) =>
@@ -279,20 +215,13 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   );
   if (existing) return { status: "already_done" };
 
-  // getTickers, not a raw price_cache query: it already computes
-  // `significant` correctly (relative volume vs. the shared threshold rule,
-  // significance.ts) for every symbol. A prior version of this function
-  // queried price_cache directly and hardcoded `significant: false` on every
-  // row, which made computeBreadth's significantCount always report 0
-  // regardless of the real figure — caught by comparing this section's
-  // claim against SessionDigest's, which reads real tickers and disagreed
-  // with it on the same page. Never reconstruct a Ticker by hand elsewhere;
-  // this is the one place that already does it right.
-  const [allTickers, macroRows, news, indexDailyCloses] = await Promise.all([
-    isHistorical
-      ? getDayTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS], resolvedDay)
-      : getTickers([...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS]),
-    isHistorical ? Promise.resolve([]) : readRows<{
+  // Tickers, not raw price_cache rows: `significant` has to come from the
+  // shared rule with relative volume. A prior version hardcoded it false and
+  // the breadth section reported 0 significant moves beside a page that
+  // showed several. A historical day reads daily_closes (readSessionTickers),
+  // since price_cache holds only the latest session.
+  const [macroRows, news, indexDailyCloses] = await Promise.all([
+    !session.isLive ? Promise.resolve([]) : readRows<{
       series_id: string;
       latest_date: string;
       latest_value: number | null;
@@ -304,13 +233,11 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
         .select("series_id, latest_date, latest_value, prior_date, prior_value")
         .abortSignal(signal),
     ),
-    loadMarketNews(resolvedDay),
-    // Share the charts' paginated read: the old unbounded query silently
-    // stopped at 1000 rows and omitted XLK/VIXY despite stored history.
-    getIndexDailyCloses(resolvedDay),
+    readDayNews("general", resolvedDay),
+    readDailyCloses("market-story:index-closes", INDEX_SYMBOLS, resolvedDay),
   ]);
 
-  const bySymbol = new Map(allTickers.map((t) => [t.symbol, t]));
+  const bySymbol = session.tickers;
   const trackedStocks = TRACKED_STOCK_SYMBOLS.flatMap((symbol) => {
     const ticker = bySymbol.get(symbol);
     return ticker ? [{ symbol, changePercent: ticker.changePercent, significant: ticker.significant, relativeVolume: ticker.relativeVolume }] : [];
@@ -361,15 +288,14 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
 /** Shared acceptance path for scheduled generation and historical replay. */
 export async function generateMarketStorySections(input: MarketStoryInput): Promise<MarketStorySections> {
   const prompt = buildMarketStoryPrompt(input);
-  const data = await generateValidatedAnalysis<GroqModel>(`market:${input.day}`, prompt, analysisSchema(MARKET_SECTION_KEYS), (candidate) => {
-    const missing = MARKET_SECTION_KEYS.filter((key) => typeof candidate[key] !== "string" || !candidate[key].trim());
-    if (missing.length) throw new Error(`Market Story missing section(s): ${missing.join(", ")}`);
+  const schema = analysisSchema(MARKET_SECTION_KEYS, { descriptions: MARKET_SECTION_DESCRIPTIONS });
+  return generateValidatedAnalysis<GroqModel>({ kind: "market", day: input.day }, prompt, schema, (candidate) => {
+    requireSections(candidate, MARKET_SECTION_KEYS, "Market Story missing section(s)");
     runAllChecks([
-      () => validatePublishedFigures(candidate as unknown as Record<string, unknown>, prompt),
+      () => validatePublishedFigures(candidate, prompt.input),
       () => validateMarketTrend(candidate, input),
     ]);
   });
-  return data;
 }
 
 export function validateMarketTrend(data: GroqModel, input: MarketStoryInput): void {
@@ -377,17 +303,15 @@ export function validateMarketTrend(data: GroqModel, input: MarketStoryInput): v
     if (/\d+(?:\.\d+)?%[^.]{0,35}(?:of (?:the )?(?:exchange|whole market)|exchange coverage)/i.test(data[key])) throw new Error(`${key}: coverage is a share of the expected tracked names, not of an exchange or whole market`);
   }
   for (const key of MARKET_SECTION_KEYS.filter((k) => k !== "volatilityContext")) {
-    if (/10[- ](?:trading[- ]|day)|confirmed reversal|net window|no[- ]clear[- ]trend|\b(?:uptrend|downtrend)\b/i.test(data[key].replace(/[\u2010-\u2015\u2212]/g, "-"))) throw new Error(`${key}: remove ALL window/trend/reversal comparisons from this section; use ONLY today's VIXY move. Keep the complete trend explanation only in volatilityContext.`);
+    if (/10[- ](?:trading[- ]|day)|confirmed reversal|net window|no[- ]clear[- ]trend|\b(?:uptrend|downtrend)\b/i.test(normalizeDashes(data[key]))) throw new Error(`${key}: remove ALL window/trend/reversal comparisons from this section; use ONLY today's VIXY move. Keep the complete trend explanation only in volatilityContext.`);
   }
   if (!input.macro.length && /(?:^|[.!?]\s+)(?:no|there (?:was|were) no)[^.]{0,80}(?:macro|economic|data|release)[^.]{0,45}(?:were released|was released|release occurred|release happened)/i.test(data.macroContext)) {
     throw new Error("macroContext: no stored macro snapshot does NOT mean no macro data were released. Say the retained input lacks numeric release data, not that no release happened.");
   }
   const trend = input.indices.find((i) => i.symbol === "VIXY")?.recentTrend;
-  if (!trend?.direction) return;
-  const text = data.volatilityContext.replace(/[\u2010-\u2015\u2212]/g, "-");
-  const direction = trend.direction === "no-clear-trend" ? /no[- ]clear(?:[- ]directional)?[- ]trend/i : new RegExp(trend.direction, "i");
-  if (!direction.test(text) || (trend.windowChangePercent != null && !hasSuppliedPercent(text, trend.windowChangePercent))) throw new Error("volatilityContext: missing VIXY direction/net window change");
-  const age = trend.reversalDaysAgo;
-  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-  if (age != null && !new RegExp(`(?:${age}|${words[age] ?? age})\\s+(?:trading[- ]?)?days?`, "i").test(text)) throw new Error("volatilityContext: missing VIXY reversal age");
+  if (!trend) return;
+  validateTrendStated(data.volatilityContext, trend, {
+    direction: "volatilityContext: missing VIXY direction/net window change",
+    age: "volatilityContext: missing VIXY reversal age",
+  });
 }

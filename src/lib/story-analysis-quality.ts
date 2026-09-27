@@ -1,38 +1,99 @@
-/** Public reasoning requirements; model self-citations cannot establish factual truth. */
-/** Output shape is constrained; independent source review checks meaning. */
-export function analysisSchema(sections: readonly string[], headline = false, sourceHeadlines: string[] = []) {
+// The pure half of the Story analysis job: prompt rendering, the output schema
+// and every published-text check. No database or provider import, so the rules
+// that decide whether a draft is published can be tested directly.
+
+import type { RecentTrend } from "./trend-detection.ts";
+
+/**
+ * A prompt as its two halves. The structured input is kept apart from the
+ * instructions so the checks can read the supplied figures directly, and so
+ * retry feedback always lands just before the input.
+ */
+export type AnalysisPrompt = { instructions: string; input: unknown };
+
+export function renderAnalysisPrompt({ instructions, input }: AnalysisPrompt, feedback = ""): string {
+  return `${instructions}\n${feedback}Input:\n${JSON.stringify(input)}`;
+}
+
+/** Output shape is constrained; `descriptions` narrows what a section may cover. */
+export function analysisSchema(
+  sections: readonly string[],
+  options: { headlineSources?: string[]; descriptions?: Record<string, string> } = {},
+) {
   const text = { type: "string" };
-  const properties: Record<string, unknown> = Object.fromEntries(sections.map((section) => [section, text]));
-  for (const section of ["overallRead", "standoutMovers", "sectorLeadership", "breadth", "marketEvents", "macroContext", "closingSynthesis"]) {
-    if (sections.includes(section)) properties[section] = { type: "string",
-      description: section === "closingSynthesis"
-        ? "Year-to-date: tech since the start of the year (yearToDateContextOnly) and whether today fits it. Never mention recent trend, uptrend, downtrend, window change or reversal."
-        : "Analyze this session only. Never mention recent trend, uptrend, downtrend, window change or reversal; those belong only in volatilityContext." };
-  }
-  if (sections.includes("volatilityContext")) properties.volatilityContext = { type: "string",
-    description: "Include VIXY exact supplied trend direction, signed net window change, latest swing-point age and today's comparison. Interpret with daily breadth; this is the ONLY field for recent trend." };
-  if (headline) properties.headline = { type: "object", additionalProperties: false, required: ["text", "sourceHeadline"],
-    properties: { text, sourceHeadline: { type: ["string", "null"], enum: [...sourceHeadlines, null] } } };
+  const properties: Record<string, unknown> = Object.fromEntries(sections.map((section) => {
+    const description = options.descriptions?.[section];
+    return [section, description ? { type: "string", description } : text];
+  }));
+  if (options.headlineSources) properties.headline = { type: "object", additionalProperties: false, required: ["text", "sourceHeadline"],
+    properties: { text, sourceHeadline: { type: ["string", "null"], enum: [...options.headlineSources, null] } } };
   return { type: "object", additionalProperties: false, required: Object.keys(properties), properties };
+}
+
+/** Every named section must be non-empty prose; `headline.text` when the story has one. */
+export function requireSections(data: Record<string, unknown>, sections: readonly string[], label: string, headline = false): void {
+  const missing: string[] = sections.filter((key) => typeof data[key] !== "string" || !(data[key] as string).trim());
+  if (headline) {
+    const text = (data.headline as { text?: unknown } | undefined)?.text;
+    if (typeof text !== "string" || !text.trim()) missing.push("headline.text");
+  }
+  if (missing.length) throw new Error(`${label}: ${missing.join(", ")}`);
+}
+
+/** The model writes non-breaking hyphens and U+2212; every check reads them as "-". */
+export function normalizeDashes(text: string): string {
+  return text.replace(/[\u2010-\u2015\u2212]/g, "-");
+}
+
+/**
+ * Bounds prompt size: the `limit` best-scoring items, back in their original
+ * order. `index` always refers to the full list.
+ */
+export function selectTopArticles<T>(items: T[], score: (item: T) => number, limit = 6): { item: T; index: number }[] {
+  return items.map((item, index) => ({ item, index }))
+    .sort((a, b) => score(b.item) - score(a.item) || a.index - b.index)
+    .slice(0, limit)
+    .sort((a, b) => a.index - b.index);
+}
+
+const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+/**
+ * The one section allowed to discuss Recent Trend must state its direction,
+ * signed net window change and, when known, the latest swing point's age.
+ */
+export function validateTrendStated(
+  text: string,
+  trend: RecentTrend,
+  errors: { direction: string; age: string },
+): void {
+  if (trend.direction == null) return;
+  const normalized = normalizeDashes(text);
+  const direction = trend.direction === "no-clear-trend" ? /no[- ]clear(?:[- ]directional)?[- ]trend/i : new RegExp(trend.direction, "i");
+  if (!direction.test(normalized) || (trend.windowChangePercent != null && !hasSuppliedPercent(normalized, trend.windowChangePercent))) {
+    throw new Error(errors.direction);
+  }
+  const age = trend.reversalDaysAgo;
+  if (age != null && !new RegExp(`(?:${age}|${COUNT_WORDS[age] ?? age})\\s+(?:trading[- ]?)?days?`, "i").test(normalized)) {
+    throw new Error(errors.age);
+  }
 }
 
 /** An unsigned positive percentage is still positive; preserve negative signs. */
 export function hasSuppliedPercent(text: string, value: number): boolean {
   const digits = Math.abs(value).toFixed(2).replace(".", "\\.");
   return new RegExp(`${value < 0 ? "-" : "(?<![-\\d.])\\+?"}${digits}\\s*%`)
-    .test(text.replace(/[\u2010-\u2015\u2212]/g, "-"));
+    .test(normalizeDashes(text));
 }
 
 /** Catches invented/re-rounded percentages; does not establish causal truth. */
-export function validatePublishedFigures(data: Record<string, unknown>, prompt: string): void {
-  const marker = "\nInput:\n";
-  if (!prompt.includes(marker)) throw new Error("No structured input for figure validation");
-  const input = prompt.slice(prompt.lastIndexOf(marker) + marker.length).replace(/[\u2010-\u2015\u2212]/g, "-");
+export function validatePublishedFigures(data: Record<string, unknown>, supplied: unknown): void {
+  const input = normalizeDashes(JSON.stringify(supplied));
   const known = new Set([...input.matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/g)].map((m) => Math.abs(Number(m[1])).toFixed(2)));
   for (const [section, value] of Object.entries(data)) {
     const text = typeof value === "string" ? value : section === "headline" ? (value as { text?: string })?.text : null;
     if (!text) continue;
-    for (const match of text.replace(/[\u2010-\u2015\u2212]/g, "-").matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/g)) {
+    for (const match of normalizeDashes(text).matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/g)) {
       if (!known.has(Math.abs(Number(match[1])).toFixed(2))) throw new Error(`${section}: percentage ${match[0]} is not supplied in the input`);
     }
     if (/\b(?:news|business)(?::|\s+)\d+\b/i.test(text)) throw new Error(`${section}: internal evidence ID leaked into published text; name the source topic or publisher instead of News 0/business:0`);

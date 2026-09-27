@@ -23,28 +23,45 @@ function firstOnOrAfter(rows: DailyClose[], from: string): DailyClose | null {
 }
 
 /**
- * `rows` need not be sorted; `today` is the ET trading day ("YYYY-MM-DD") the
- * latest close is measured against. Null fields mean insufficient history
- * (e.g. a symbol newly added, or no row on/after the period's start), never a
- * wrong number standing in for one.
+ * `rows` need not be sorted. `day` is the ET session being described and
+ * `sessionPrice` its own price — the latest quote live, the close afterwards.
+ * The session is measured through that price rather than through its stored
+ * close row, which only exists once the official closing print is confirmed
+ * (see reliableCloseDay). The baseline is still a stored row — the first on or
+ * after the period's start and no later than `day` — so a later close can never
+ * leak into a historical session. Null means no such stored row, never a
+ * stand-in number.
  */
 export function computePeriodPerformance(
   rows: DailyClose[],
-  today: string,
+  day: string,
+  sessionPrice: number,
 ): PeriodPerformance {
-  if (rows.length === 0) return { ytdPercent: null, mtdPercent: null };
+  const sorted = rows
+    .filter((row) => row.tradingDay <= day)
+    .sort((a, b) => a.tradingDay.localeCompare(b.tradingDay));
 
-  const sorted = [...rows].sort((a, b) => a.tradingDay.localeCompare(b.tradingDay));
-  const latest = sorted[sorted.length - 1];
-
-  const yearStart = `${today.slice(0, 4)}-01-01`;
-  const monthStart = `${today.slice(0, 7)}-01`;
-
-  const ytdBase = firstOnOrAfter(sorted, yearStart);
-  const mtdBase = firstOnOrAfter(sorted, monthStart);
+  const ytdBase = firstOnOrAfter(sorted, `${day.slice(0, 4)}-01-01`);
+  const mtdBase = firstOnOrAfter(sorted, `${day.slice(0, 7)}-01`);
 
   return {
-    ytdPercent: ytdBase ? percentChange(ytdBase.close, latest.close) : null,
-    mtdPercent: mtdBase ? percentChange(mtdBase.close, latest.close) : null,
+    ytdPercent: ytdBase ? percentChange(ytdBase.close, sessionPrice) : null,
+    mtdPercent: mtdBase ? percentChange(mtdBase.close, sessionPrice) : null,
   };
+}
+
+/**
+ * The line a YTD chart draws: this year's stored closes before `day`, then the
+ * session's own price — the same year and end point computePeriodPerformance
+ * measures, so the chart and the YTD figure beside it describe one span.
+ */
+export function ytdSeries(rows: DailyClose[], day: string, sessionPrice: number): DailyClose[] {
+  const yearStart = `${day.slice(0, 4)}-01-01`;
+  return [
+    ...rows
+      .filter((row) => row.tradingDay >= yearStart && row.tradingDay < day)
+      .sort((a, b) => a.tradingDay.localeCompare(b.tradingDay))
+      .map(({ tradingDay, close }) => ({ tradingDay, close })),
+    { tradingDay: day, close: sessionPrice },
+  ];
 }

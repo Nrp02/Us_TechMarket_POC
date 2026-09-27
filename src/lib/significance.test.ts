@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isSignificant, relativeVolume, significanceScore } from "./significance.ts";
+import { firedBranches, isSignificant, relativeVolume, significanceScore } from "./significance.ts";
 
 // The Significant Movement rule is used in three places (Home Status badge, Top
 // Movers ranking, Today's Activity badge) and CLAUDE.md forbids reimplementing
@@ -94,5 +94,22 @@ test("a missing figure yields null, never zero", () => {
     [12_580_343, 0],
   ] as [number | null, number | null][]) {
     assert.equal(relativeVolume(volume, avg), null);
+  }
+});
+
+// The AI Daily Summary names which branch fired so the model can state the
+// reason. That list used to repeat the thresholds by hand, so a rule change
+// would have left the stated reasons disagreeing with the badge.
+test("firedBranches names each branch that fired, and is empty exactly when the move is Normal", () => {
+  assert.deepEqual(firedBranches(-5, null), ["price change of 5% or more"]);
+  assert.deepEqual(firedBranches(0, 2.5), ["relative volume of 2.5x or more"]);
+  assert.deepEqual(firedBranches(3, 1.5), [
+    "price change of 3% or more together with relative volume of 1.5x or more",
+  ]);
+  assert.equal(firedBranches(6, 3).length, 3);
+  for (let pct = -7; pct <= 7; pct += 0.25) {
+    for (const rvol of [null, 0, 1, 1.49, 1.5, 2, 2.49, 2.5, 4]) {
+      assert.equal(firedBranches(pct, rvol).length > 0, isSignificant(pct, rvol), `${pct}% at ${rvol}x`);
+    }
   }
 });

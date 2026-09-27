@@ -1,16 +1,22 @@
 import { unstable_cache } from "next/cache";
 
 import { readDailyCloses } from "@/lib/daily-closes";
-import { buildDayTicker } from "@/lib/day-ticker";
 import { readAllRows, readMaybeOne, readRows } from "@/lib/db-read";
 import { dayWindow, tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
 import { newsRetentionCutoff } from "@/lib/news-retention";
 import { computePeerComparison, type PeerComparison } from "@/lib/peer-comparison";
 import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
-import { isSignificant, relativeVolume, significanceScore } from "@/lib/significance";
+import {
+  latestSessionDay,
+  newestSnapshotAt,
+  readDayTickers,
+  readLiveTickers,
+  type Ticker,
+} from "@/lib/session";
 import { db } from "@/lib/supabase";
-import { INDEX_SYMBOLS, NAME_BY_SYMBOL, PEERS, SECTOR_BY_SYMBOL } from "@/lib/symbols";
+import { INDEX_SYMBOLS, PEERS, SECTOR_BY_SYMBOL } from "@/lib/symbols";
+import type { MarketStorySections, StorySections } from "@/lib/story-sections";
 
 // Every Home page read comes from here. Nothing in this file calls an upstream
 // API — the tables are filled by lib/refresh.ts.
@@ -41,65 +47,9 @@ import { INDEX_SYMBOLS, NAME_BY_SYMBOL, PEERS, SECTOR_BY_SYMBOL } from "@/lib/sy
  */
 const CACHE_SECONDS = 60;
 
-export type Ticker = {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: number | null;
-  /** Volume so far today over the 10-day average; null when volume is unknown. */
-  relativeVolume: number | null;
-  significant: boolean;
-  score: number;
-  /** Today's intraday closes, oldest first. Empty until a refresh has run. */
-  spark: number[];
-};
-
-type PriceRow = {
-  symbol: string;
-  price: number;
-  change: number;
-  change_percent: number;
-  volume: number | null;
-  avg_volume: number | null;
-};
-
-/** The instant of the newest stored snapshot, overall or for one symbol. */
-async function newestSnapshotAt(symbol?: string): Promise<string | null> {
-  // No `count: "exact"`: `.limit(1)` is a natural bound, so there is no cap to
-  // hit and no reason to pay for a count.
-  const rows = await readRows<{ snapshot_at: string }>(
-    symbol ? `newest-snapshot:${symbol}` : "newest-snapshot",
-    (signal) => {
-      let query = db
-        .from("intraday_snapshots")
-        .select("snapshot_at")
-        .order("snapshot_at", { ascending: false })
-        .limit(1);
-
-      if (symbol) query = query.eq("symbol", symbol);
-
-      return query.abortSignal(signal);
-    },
-  );
-
-  return rows[0]?.snapshot_at ?? null;
-}
-
-/**
- * The most recent session that actually produced snapshots, as an ET date.
- *
- * Everything on a per-stock page keys off this. It is read from the data rather
- * than assumed from the clock: a fixed look-back window expires at a wall-clock
- * moment, which silently emptied the page from Sunday afternoon until Monday's
- * open — and after every market holiday — because the chart, the timeline and
- * the stored summary are all looked up by the day the snapshots imply.
- */
-async function getLatestSessionDay(symbol?: string): Promise<string | null> {
-  const newest = await newestSnapshotAt(symbol);
-  return newest ? tradingDay(new Date(newest)) : null;
-}
+export type { Ticker };
+/** Uncached on purpose: a historical day never changes, and callers already cache around it. */
+export const getDayTickers = readDayTickers;
 
 /**
  * The session the cached data describes: its New York date, and the instant of
@@ -124,97 +74,10 @@ export const getSessionStamp = unstable_cache(
   { revalidate: CACHE_SECONDS },
 );
 
-/** Latest session's intraday closes per symbol, keyed by symbol. */
-async function getSparklines(): Promise<Map<string, number[]>> {
-  const day = await getLatestSessionDay();
-  if (!day) return new Map();
-
-  const { from, to } = dayWindow(day);
-
-  // 49 symbols × 27 bars exceed 1000 rows: read the entire ordered session.
-  const rows = await readAllRows<{ symbol: string; price: number; snapshot_at: string }>(
-    "sparklines",
-    (signal, start, end) =>
-      db
-        .from("intraday_snapshots")
-        .select("symbol, price, snapshot_at", { count: "exact" })
-        .gte("snapshot_at", from)
-        .lt("snapshot_at", to)
-        .order("snapshot_at", { ascending: true })
-        .order("symbol", { ascending: true })
-        .range(start, end)
-        .abortSignal(signal),
-  );
-
-  // The window can only straddle the boundary, never span two sessions, so the
-  // trading-day comparison is what actually pins each point to `day`.
-  const result = new Map<string, number[]>();
-  for (const row of rows) {
-    if (tradingDay(new Date(row.snapshot_at)) !== day) continue;
-    result.set(row.symbol, [...(result.get(row.symbol) ?? []), Number(row.price)]);
-  }
-  return result;
-}
-
-async function getTickersUncached(
-  symbols: string[],
-  // Sparklines cost a read of every tracked symbol's whole session, so a caller
-  // that does not render one says so rather than paying for it.
-  { sparklines = true }: { sparklines?: boolean } = {},
-): Promise<Ticker[]> {
-  if (!symbols.length) return [];
-
-  const [prices, sparks] = await Promise.all([
-    // `.in()` over at most 25 symbols is its own bound, so no exact count.
-    readRows<PriceRow>("price-cache", (signal) =>
-      db
-        .from("price_cache")
-        .select("symbol, price, change, change_percent, volume, avg_volume")
-        .in("symbol", symbols)
-        .abortSignal(signal),
-    ),
-    sparklines ? getSparklines() : new Map<string, number[]>(),
-  ]);
-
-  const bySymbol = new Map(prices.map((row) => [row.symbol, row]));
-
-  // A read failure can no longer reach this point — it throws upstream — so an
-  // absent row now means what it says: the symbol has never been refreshed. That
-  // was worth nothing while the two were indistinguishable, and is the line that
-  // confirms it next time.
-  const missing = symbols.filter((symbol) => !bySymbol.has(symbol));
-  if (missing.length) {
-    console.warn(`[read] price-cache has no row for ${missing.join(", ")}`);
-  }
-
-  return symbols.flatMap((symbol) => {
-    const row = bySymbol.get(symbol);
-    if (!row) return [];
-
-    const changePercent = Number(row.change_percent);
-    const relVolume = relativeVolume(row.volume, row.avg_volume);
-
-    return [
-      {
-        symbol,
-        name: NAME_BY_SYMBOL.get(symbol) ?? symbol,
-        price: Number(row.price),
-        change: Number(row.change),
-        changePercent,
-        volume: row.volume ? Number(row.volume) : null,
-        relativeVolume: relVolume,
-        significant: isSignificant(changePercent, relVolume),
-        score: significanceScore(changePercent, relVolume),
-        spark: sparks.get(symbol) ?? [],
-      },
-    ];
-  });
-}
-
 // Ticker[] is plain JSON, so it survives the cache intact. The Map that
 // getSparklines returns deliberately never crosses this boundary — a Map
 // serialises to {} and every sparkline would silently come back empty.
-export const getTickers = unstable_cache(getTickersUncached, ["tickers"], {
+export const getTickers = unstable_cache(readLiveTickers, ["tickers"], {
   revalidate: CACHE_SECONDS,
 });
 
@@ -450,28 +313,6 @@ export type UpcomingEvent = {
   note: string | null;
 };
 
-/**
- * The 8-section Today's Story narrative, read back from the `stories` table.
- * Mirrors the shape `story-generation.ts` writes (its `StorySections`), but is
- * declared independently rather than imported from there — that file is an
- * upstream/AI job (blocked from page/component imports by `no-restricted-imports`
- * in eslint.config.mjs), and this read-side type is this file's own, same as
- * `DailySummary` below is never imported from `daily-summary.ts`.
- */
-export type StorySections = {
-  headline: {
-    text: string;
-    news: { headline: string; sourceUrl: string; publishedAt: string } | null;
-  };
-  comparison: string;
-  classification: string;
-  unusualness: string;
-  explanation: string;
-  fundamentals: string;
-  peerSectorRelation: string;
-  ytdTakeaway: string;
-};
-
 export type Story = {
   sections: StorySections;
   generatedAt: string;
@@ -481,9 +322,9 @@ export type Story = {
  * The retired-then-restored AI Daily Summary. Mirrors what `daily-summary.ts`
  * writes to `daily_summaries` (`movement`/`recap`/`explanation` joined into
  * one `summary` string at write time, plus `bullets`) — declared
- * independently rather than imported from there for the same reason
- * `StorySections` is: that file is an upstream/AI job, blocked from
- * page/component imports by `no-restricted-imports`.
+ * independently rather than imported from there: that file is an
+ * upstream/AI job, blocked from page/component imports by
+ * `no-restricted-imports`.
  */
 export type DailySummary = {
   narrative: string;
@@ -624,85 +465,6 @@ async function getSymbolNews(symbol: string, day: string): Promise<NewsItem[]> {
 }
 
 /**
- * The historical counterpart to getTickersUncached: builds the same Ticker
- * shape for any of the previous 6 trading days, from daily_closes
- * (price/change/change%, the real source now that it stores them directly —
- * see migration 0010) and that day's intraday_snapshots (volume, summed per
- * symbol — see day-ticker.ts for why a sum, not the last bar). Never used for
- * "today" — the live path keeps reading price_cache exactly as before.
- */
-export async function getDayTickers(symbols: string[], day: string): Promise<Ticker[]> {
-  if (!symbols.length) return [];
-  const { from, to } = dayWindow(day);
-
-  const [closeRows, snapshotRows, avgVolRows] = await Promise.all([
-    readRows<{ symbol: string; close: number; change: number; change_percent: number }>(
-      "day-ticker-closes",
-      (signal) =>
-        db
-          .from("daily_closes")
-          .select("symbol, close, change, change_percent")
-          .in("symbol", symbols)
-          .eq("trading_day", day)
-          .abortSignal(signal),
-    ),
-    readAllRows<{ symbol: string; price: number; volume: number | null; snapshot_at: string }>(
-      "day-ticker-snapshots",
-      (signal, start, end) =>
-        db
-          .from("intraday_snapshots")
-          .select("symbol, price, volume, snapshot_at", { count: "exact" })
-          .in("symbol", symbols)
-          .gte("snapshot_at", from)
-          .lt("snapshot_at", to)
-          .order("snapshot_at", { ascending: true })
-          .order("symbol", { ascending: true })
-          .range(start, end)
-          .abortSignal(signal),
-    ),
-    readRows<{ symbol: string; avg_volume: number | null }>(
-      "day-ticker-avgvol",
-      (signal) =>
-        db.from("price_cache").select("symbol, avg_volume").in("symbol", symbols).abortSignal(signal),
-    ),
-  ]);
-
-  const closeBySymbol = new Map(
-    closeRows.map((row) => [
-      row.symbol,
-      { close: Number(row.close), change: Number(row.change), changePercent: Number(row.change_percent) },
-    ]),
-  );
-  const avgVolBySymbol = new Map(
-    avgVolRows.map((row) => [row.symbol, row.avg_volume == null ? null : Number(row.avg_volume)]),
-  );
-
-  const bySymbol = new Map<string, { volumes: number[]; prices: number[] }>(
-    symbols.map((symbol) => [symbol, { volumes: [], prices: [] }]),
-  );
-  for (const row of snapshotRows) {
-    if (tradingDay(new Date(row.snapshot_at)) !== day) continue;
-    const bucket = bySymbol.get(row.symbol);
-    if (!bucket) continue;
-    if (row.volume != null) bucket.volumes.push(Number(row.volume));
-    bucket.prices.push(Number(row.price));
-  }
-
-  return symbols.flatMap((symbol) => {
-    const bucket = bySymbol.get(symbol)!;
-    const ticker = buildDayTicker({
-      symbol,
-      name: NAME_BY_SYMBOL.get(symbol) ?? symbol,
-      dailyClose: closeBySymbol.get(symbol) ?? null,
-      snapshotVolumes: bucket.volumes,
-      currentAvgVolume: avgVolBySymbol.get(symbol) ?? null,
-      sparkPrices: bucket.prices,
-    });
-    return ticker ? [ticker] : [];
-  });
-}
-
-/**
  * Every ET trading day Today's Activity, Stocks and Market can show a
  * historical view for, most recent first — bounded by intraday_snapshots'
  * 7-day retention, since that's what a historical day's volume needs (see
@@ -725,24 +487,6 @@ export const getActivityDates = unstable_cache(
   ["activity-dates"],
   { revalidate: CACHE_SECONDS },
 );
-
-/**
- * The 8-section Market Story narrative, read back from the `market_stories`
- * table. Mirrors `market-story-generation.ts`'s `MarketStorySections`, same
- * "declared independently rather than imported" reasoning `StorySections`
- * above already follows — that file is an upstream/AI job, blocked from
- * page/component imports by `no-restricted-imports`.
- */
-export type MarketStorySections = {
-  overallRead: string;
-  standoutMovers: string;
-  sectorLeadership: string;
-  breadth: string;
-  marketEvents: string;
-  macroContext: string;
-  volatilityContext: string;
-  closingSynthesis: string;
-};
 
 export type MarketStory = { sections: MarketStorySections; generatedAt: string };
 
@@ -778,7 +522,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
   // everything below is then read for that one day — chart, news count,
   // timeline and narrative all describing the same session rather than each
   // picking its own.
-  const latestDay = (await getLatestSessionDay(symbol)) ?? tradingDay();
+  const latestDay = (await latestSessionDay(symbol)) ?? tradingDay();
   const sessionDay = day ?? latestDay;
   const isHistorical = sessionDay !== latestDay;
 
@@ -801,8 +545,8 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
       // exactly as before "day" existed. A historical day reads getDayTickers
       // instead, which has no live cache to fall back on.
       isHistorical
-        ? getDayTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], sessionDay)
-        : getTickersUncached([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], {
+        ? readDayTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], sessionDay)
+        : readLiveTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], {
             sparklines: false,
           }),
       getIntraday(symbol, sessionDay),
@@ -888,7 +632,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
     intraday,
     news,
     peers: { ...computePeerComparison(ticker.changePercent, peerChangePercents), symbols: peerSymbols },
-    periodPerformance: computePeriodPerformance(dailyCloses, sessionDay),
+    periodPerformance: computePeriodPerformance(dailyCloses, sessionDay, ticker.price),
     dailyCloses,
     timeline: timelineRows.map((row) => ({
       at: row.event_at,

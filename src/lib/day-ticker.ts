@@ -12,7 +12,7 @@
 // bar" (which would be true if the feed were cumulative, and is not).
 
 import { isSignificant, relativeVolume, significanceScore } from "./significance.ts";
-import type { Ticker } from "./queries.ts";
+import type { Ticker } from "./session.ts";
 
 export type DayCloseRow = { close: number; change: number; changePercent: number };
 
@@ -43,6 +43,7 @@ export function buildDayTicker(params: {
     changePercent: dailyClose.changePercent,
     volume,
     relativeVolume: relVolume,
+    avgVolume: currentAvgVolume,
     significant: isSignificant(dailyClose.changePercent, relVolume),
     score: significanceScore(dailyClose.changePercent, relVolume),
     spark: sparkPrices,

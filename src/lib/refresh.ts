@@ -1,8 +1,9 @@
-import { hasReliableClose, reconcileClose } from "@/lib/closing-price";
+import { readRows } from "@/lib/db-read";
 import { fetchLatestEarnings, fetchMetrics, fetchQuote } from "@/lib/finnhub";
 import { isFomcDay } from "@/lib/fomc-calendar";
 import { FRED_SERIES, fetchLatestTwo } from "@/lib/fred";
 import { tradingDay } from "@/lib/market";
+import { type DailyCloseRow, deriveSymbolRows, type PriceRow, type SnapshotRow } from "@/lib/refresh-rows";
 import { fetchFilings } from "@/lib/sec-edgar";
 import { db } from "@/lib/supabase";
 import { CIK_BY_SYMBOL, INDEX_SYMBOLS, TOP_20_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
@@ -15,21 +16,6 @@ import { fetchDayData } from "@/lib/yahoo";
 /** Finnhub allows 60 calls/min; this keeps a burst well inside that. */
 const CONCURRENCY = 5;
 const REFRESH_SYMBOLS = [...TRACKED_STOCK_SYMBOLS, ...INDEX_SYMBOLS];
-
-const SNAPSHOT_MINUTES = 15;
-
-/**
- * Snaps a bar to the 15-minute grid the schema documents. The upstream feed
- * appends a live, partially-formed bar stamped with the current time, so
- * without this every refresh would leave an extra off-grid point behind and the
- * snapshots would drift away from an even cadence.
- */
-function snapshotSlot(at: Date): string {
-  const slot = new Date(at);
-  slot.setUTCSeconds(0, 0);
-  slot.setUTCMinutes(Math.floor(slot.getUTCMinutes() / SNAPSHOT_MINUTES) * SNAPSHOT_MINUTES);
-  return slot.toISOString();
-}
 
 /** Bounded worker pool over `items`. Private: `refreshMarketData` is its only caller. */
 async function mapLimit<T, R>(
@@ -50,16 +36,6 @@ async function mapLimit<T, R>(
   await Promise.all(workers);
   return results;
 }
-
-type PriceRow = {
-  symbol: string;
-  price: number;
-  change: number;
-  change_percent: number;
-  volume: number | null;
-  avg_volume: number | null;
-  updated_at: string;
-};
 
 export type RefreshResult = {
   symbols: number;
@@ -88,14 +64,16 @@ const DAILY_MACRO_SERIES: ReadonlySet<string> = new Set([FRED_SERIES.tenYearTrea
  * ingestion job over a low-frequency secondary fetch.
  */
 async function refreshMacroIndicators(): Promise<void> {
-  const { data: cached } = await db.from("macro_indicators").select("series_id, updated_at");
+  const cached = await readRows<{ series_id: string; updated_at: string }>("refresh-macro", (signal) =>
+    db.from("macro_indicators").select("series_id, updated_at").abortSignal(signal),
+  );
   const staleCutoff = (seriesId: string) => Date.now() - (DAILY_MACRO_SERIES.has(seriesId)
     ? DAILY_MACRO_STALE_HOURS * 60 * 60 * 1000
     : MACRO_STALE_DAYS * 24 * 60 * 60 * 1000);
   const fresh = new Set(
-    (cached ?? [])
-      .filter((r) => new Date(r.updated_at as string).getTime() >= staleCutoff(r.series_id as string))
-      .map((r) => r.series_id as string),
+    cached
+      .filter((r) => new Date(r.updated_at).getTime() >= staleCutoff(r.series_id))
+      .map((r) => r.series_id),
   );
 
   const rows: {
@@ -152,41 +130,30 @@ async function refreshMacroIndicators(): Promise<void> {
 export async function refreshMarketData(): Promise<RefreshResult> {
   // Average volume moves slowly, so it is only re-fetched when missing. That
   // keeps a warm run at one Finnhub call per symbol.
-  const { data: cached } = await db
-    .from("price_cache")
-    .select("symbol, avg_volume");
-  const knownAvg = new Map(
-    (cached ?? []).map((r) => [r.symbol as string, r.avg_volume as number | null]),
+  // A failed read throws rather than reading as "nothing cached", which would
+  // re-fetch every symbol's metrics and fundamentals in one tick.
+  const cached = await readRows<{ symbol: string; avg_volume: number | null }>("refresh-avg-volume", (signal) =>
+    db.from("price_cache").select("symbol, avg_volume").abortSignal(signal),
   );
+  const knownAvg = new Map(cached.map((r) => [r.symbol, r.avg_volume]));
 
   // Fundamentals are only re-fetched when missing or stale, same "check first,
   // fetch only if needed" shape as knownAvg above — a warm run makes zero
   // fundamentals-related upstream calls once every tracked stock has a fresh row.
-  const { data: cachedFundamentals } = await db
-    .from("fundamentals")
-    .select("symbol, updated_at");
+  const cachedFundamentals = await readRows<{ symbol: string; updated_at: string }>("refresh-fundamentals", (signal) =>
+    db.from("fundamentals").select("symbol, updated_at").abortSignal(signal),
+  );
   const staleCutoff = Date.now() - FUNDAMENTALS_STALE_DAYS * 24 * 60 * 60 * 1000;
   const freshFundamentals = new Set(
-    (cachedFundamentals ?? [])
-      .filter((r) => new Date(r.updated_at as string).getTime() >= staleCutoff)
-      .map((r) => r.symbol as string),
+    cachedFundamentals
+      .filter((r) => new Date(r.updated_at).getTime() >= staleCutoff)
+      .map((r) => r.symbol),
   );
 
   const failed: string[] = [];
   const priceRows: PriceRow[] = [];
-  const snapshotRows: {
-    symbol: string;
-    price: number;
-    volume: number | null;
-    snapshot_at: string;
-  }[] = [];
-  const dailyCloseRows: {
-    symbol: string;
-    trading_day: string;
-    close: number;
-    change: number;
-    change_percent: number;
-  }[] = [];
+  const snapshotRows: SnapshotRow[] = [];
+  const dailyCloseRows: DailyCloseRow[] = [];
   const fundamentalsRows: {
     symbol: string;
     eps_growth_quarterly_yoy: number | null;
@@ -244,49 +211,10 @@ export async function refreshMarketData(): Promise<RefreshResult> {
         avgVolume = metrics.avgVolume;
       }
 
-      // Once the session has printed a close, that print is what gets stored
-      // rather than the live quote — Finnhub's has already moved on the liquid
-      // names by the time the closing-window tick runs. Mid-session this is the
-      // quote untouched. See lib/closing-price.ts for the measurement.
-      const settled = reconcileClose(quote, day.bars);
-
-      priceRows.push({
-        symbol,
-        price: settled.price,
-        change: settled.change,
-        change_percent: settled.changePercent,
-        volume: day.volume,
-        avg_volume: avgVolume,
-        updated_at: new Date().toISOString(),
-      });
-
-      for (const bar of day.bars) {
-        snapshotRows.push({
-          symbol,
-          price: bar.price,
-          volume: bar.volume,
-          snapshot_at: snapshotSlot(bar.at),
-        });
-      }
-
-      // Only write a daily-close row once reconcileClose actually substituted
-      // the official closing print for `settled`, not merely once a bar at/
-      // after the bell exists — a closing bar with a malformed quote baseline
-      // makes reconcileClose fall back to the raw (possibly drifted) quote,
-      // and unlike price_cache this table has no next tick to self-correct on
-      // (see hasReliableClose's own doc comment). Idempotent: a repeated
-      // closing-window tick re-upserts the same (symbol, trading_day) row,
-      // which only changes if a later tick finds a better closing bar. No new
-      // upstream call — reuses settled/day.bars.
-      if (hasReliableClose(quote, day.bars)) {
-        dailyCloseRows.push({
-          symbol,
-          trading_day: tradingDay(),
-          close: settled.price,
-          change: settled.change,
-          change_percent: settled.changePercent,
-        });
-      }
+      const rows = deriveSymbolRows({ symbol, quote, day, avgVolume, now: new Date() });
+      priceRows.push(rows.price);
+      snapshotRows.push(...rows.snapshots);
+      if (rows.dailyClose) dailyCloseRows.push(rows.dailyClose);
 
       // Fundamentals apply to companies, not the index ETF proxies, and are
       // only fetched when missing or stale (see FUNDAMENTALS_STALE_DAYS). Its

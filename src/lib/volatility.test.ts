@@ -27,16 +27,23 @@ test("no history yields null, never a fabricated percentile", () => {
 });
 
 test("range position is (price - min) / (max - min), labeled by thirds", () => {
-  assert.deepEqual(computeRangePosition(95, [60, 100]), { position: (95 - 60) / (100 - 60), label: "near-high" });
-  assert.deepEqual(computeRangePosition(62, [60, 100]), { position: (62 - 60) / (100 - 60), label: "near-low" });
-  assert.deepEqual(computeRangePosition(80, [60, 100]), { position: 0.5, label: "mid-range" });
+  assert.deepEqual(computeRangePosition(95, [60, 100]), { position: (95 - 60) / (100 - 60), label: "near-high", min: 60, max: 100 });
+  assert.deepEqual(computeRangePosition(62, [60, 100]), { position: (62 - 60) / (100 - 60), label: "near-low", min: 60, max: 100 });
+  assert.deepEqual(computeRangePosition(80, [60, 100]), { position: 0.5, label: "mid-range", min: 60, max: 100 });
 });
 
 test("a zero-width range (one stored close, or a flat year) yields null, not a divide-by-zero", () => {
-  assert.deepEqual(computeRangePosition(60, [60]), { position: null, label: null });
-  assert.deepEqual(computeRangePosition(60, [60, 60, 60]), { position: null, label: null });
+  assert.deepEqual(computeRangePosition(60, [60]), { position: null, label: null, min: null, max: null });
+  assert.deepEqual(computeRangePosition(60, [60, 60, 60]), { position: null, label: null, min: null, max: null });
 });
 
 test("no history yields null", () => {
-  assert.deepEqual(computeRangePosition(60, []), { position: null, label: null });
+  assert.deepEqual(computeRangePosition(60, []), { position: null, label: null, min: null, max: null });
+});
+
+// Regression: the prompt could state "104%" of the range while the chart beside
+// it clamped the same price to 100%. Today's price is part of its own window.
+test("a price beyond every stored close extends the range instead of leaving it", () => {
+  assert.deepEqual(computeRangePosition(110, [60, 100]), { position: 1, label: "near-high", min: 60, max: 110 });
+  assert.deepEqual(computeRangePosition(50, [60, 100]), { position: 0, label: "near-low", min: 50, max: 100 });
 });

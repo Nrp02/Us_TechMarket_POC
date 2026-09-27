@@ -68,3 +68,23 @@ export function isSignificant(
 ): boolean {
   return significanceScore(changePercent, relativeVolume) >= 1;
 }
+
+/**
+ * Which branches of the rule fired, in words, so a prompt can state the reason
+ * without the model working it back out of the thresholds. Empty exactly when
+ * `isSignificant` is false.
+ */
+export function firedBranches(
+  changePercent: number,
+  relativeVolume: number | null,
+): string[] {
+  const pct = Math.abs(changePercent);
+  const rvol = relativeVolume ?? 0;
+  const branches: string[] = [];
+  if (pct >= PCT_STRONG) branches.push(`price change of ${PCT_STRONG}% or more`);
+  if (rvol >= RVOL_STRONG) branches.push(`relative volume of ${RVOL_STRONG}x or more`);
+  if (pct >= PCT_COMBO && rvol >= RVOL_COMBO) {
+    branches.push(`price change of ${PCT_COMBO}% or more together with relative volume of ${RVOL_COMBO}x or more`);
+  }
+  return branches;
+}

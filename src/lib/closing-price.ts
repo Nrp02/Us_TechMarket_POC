@@ -18,7 +18,7 @@
 // client at module load and throws without env vars, so a rule defined beside
 // it cannot be loaded by the test runner at all.
 
-import { isAtOrAfterClose } from "@/lib/market";
+import { isAtOrAfterClose, tradingDay } from "@/lib/market";
 import type { Quote } from "@/lib/finnhub";
 import type { Bar } from "@/lib/yahoo";
 
@@ -37,7 +37,7 @@ import type { Bar } from "@/lib/yahoo";
  * against the previous close, so that baseline is recovered from the pair it
  * already sent rather than fetched again.
  */
-/** The same closing-bar search reconcileClose uses internally, exposed so a caller can ask "did it actually substitute?" without reconcileClose's return shape having to carry that flag. */
+/** The same closing-bar search reconcileClose uses internally, shared with reliableCloseDay so a caller can ask "did it actually substitute?" without reconcileClose's return shape having to carry that flag. */
 function pickClosingBar(bars: Bar[]): Bar | null {
   let closingBar: Bar | null = null;
   for (const bar of bars) {
@@ -66,19 +66,23 @@ export function reconcileClose(quote: Quote, bars: Bar[]): Quote {
 }
 
 /**
- * True only when reconcileClose would actually substitute the official
- * closing print for `quote` — i.e. a closing bar exists AND the quote's own
- * baseline is well-formed. A bar at/after the bell is not enough on its own:
- * reconcileClose falls back to the raw (possibly after-hours-drifted or
- * malformed) quote when the baseline check fails, and a caller that only
- * checked for a closing bar would then treat that unswapped quote as the
- * day's official close. Unlike price_cache, daily_closes has no next tick to
- * self-correct on — it is written once per trading day and kept — so writing
- * it needs this stronger check, not the bar-presence check reconcileClose
- * itself starts from.
+ * The ET session day of the official closing print, only when reconcileClose
+ * would actually substitute it for `quote` — i.e. a closing bar exists AND the
+ * quote's own baseline is well-formed; null otherwise. A bar at/after the bell
+ * is not enough on its own: reconcileClose falls back to the raw (possibly
+ * after-hours-drifted or malformed) quote when the baseline check fails, and a
+ * caller that only checked for a closing bar would then treat that unswapped
+ * quote as the day's official close. Unlike price_cache, daily_closes has no
+ * next tick to self-correct on — it is written once per trading day and kept —
+ * so writing it needs this stronger check, not the bar-presence check
+ * reconcileClose itself starts from.
+ *
+ * The day comes from the bar, never the clock: a forced refresh on Saturday
+ * 2026-09-26 dated every symbol's Friday close as Saturday when it did.
  */
-export function hasReliableClose(quote: Quote, bars: Bar[]): boolean {
+export function reliableCloseDay(quote: Quote, bars: Bar[]): string | null {
   const closingBar = pickClosingBar(bars);
-  if (!closingBar) return false;
-  return quote.price - quote.change > 0;
+  if (!closingBar) return null;
+  if (!(quote.price - quote.change > 0)) return null;
+  return tradingDay(closingBar.at);
 }

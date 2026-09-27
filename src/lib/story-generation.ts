@@ -1,11 +1,12 @@
-import { generateValidatedAnalysis } from "@/lib/story-analysis-call";
-import { analysisSchema, validatePublishedFigures, hasSuppliedPercent, runAllChecks, validateNoFlatMoves } from "@/lib/story-analysis-quality";
+import { generateValidatedAnalysis, stockAttemptTimes } from "@/lib/story-analysis-call";
+import { type AnalysisPrompt, analysisSchema, normalizeDashes, requireSections, runAllChecks, selectTopArticles, validateNoFlatMoves, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
+import { STOCK_SECTION_KEYS, type StorySections } from "@/lib/story-sections";
 import { loadBusinessContext } from "@/lib/story-business-context";
 import { formatPercent, formatPrice, formatRelVolume } from "@/lib/format";
 import { GroqRateLimitError } from "@/lib/groq";
-import { dayWindow, isAtOrAfterClose, tradingDay, sessionDayTimes } from "@/lib/market";
+import { readDayNews } from "@/lib/day-news";
+import { isAtOrAfterClose, tradingDay, sessionDayTimes } from "@/lib/market";
 import { computePeriodPerformance } from "@/lib/period-performance";
-import { relativeVolume } from "@/lib/significance";
 import { ANALYSIS_GUIDELINE } from "@/lib/story-guideline";
 import { buildStoryInput, type StoryDailyClose, type StoryInput, type StoryNewsItem, type StorySecFiling, type TenYearYield } from "@/lib/story-input";
 import { FRED_SERIES } from "@/lib/fred";
@@ -14,6 +15,7 @@ import { loadStoryFundamentals } from "@/lib/story-fundamentals";
 import { readDailyCloses } from "@/lib/daily-closes";
 import { readMaybeOne, readRows } from "@/lib/db-read";
 import { NAME_BY_SYMBOL, PEERS, TOP_20_SYMBOLS, mentionsSymbol } from "@/lib/symbols";
+import { readSessionTickers, type Ticker } from "@/lib/session";
 
 // The end-of-day Today's Story job. For each of the Top 20, in a stock's own
 // call, it assembles that day's computed inputs (ticket 03) and asks Groq for
@@ -40,56 +42,9 @@ export type StoryGenerationResult = {
   failed: string[];
 };
 
-export type PriceRow = {
-  symbol: string;
-  price: number;
-  change: number;
-  change_percent: number;
-  volume: number | null;
-  avg_volume: number | null;
-  updated_at: string;
-};
-
-/**
- * The 8 sections, stored as-is and read back by the (later) page. `headline`
- * carries the picked article resolved server-side from the model's index pick
- * — never a URL or headline the model wrote itself, so it cannot invent one.
- */
-export type StorySections = {
-  headline: {
-    text: string;
-    news: { headline: string; sourceUrl: string; publishedAt: string } | null;
-  };
-  comparison: string;
-  classification: string;
-  unusualness: string;
-  explanation: string;
-  fundamentals: string;
-  peerSectorRelation: string;
-  ytdTakeaway: string;
-};
-
 type GroqModel = {
   headline: { text: string; sourceHeadline: string | null };
-  comparison: string;
-  classification: string;
-  unusualness: string;
-  explanation: string;
-  fundamentals: string;
-  peerSectorRelation: string;
-  ytdTakeaway: string;
-};
-
-/** Every string-valued key `GroqModel` must carry — `headline.text` is checked separately, since it's nested. */
-const REQUIRED_STRING_KEYS = [
-  "comparison",
-  "classification",
-  "unusualness",
-  "explanation",
-  "fundamentals",
-  "peerSectorRelation",
-  "ytdTakeaway",
-] as const satisfies readonly (keyof GroqModel)[];
+} & Record<(typeof STOCK_SECTION_KEYS)[number], string>;
 
 const percentOrNull = (value: number | null) => (value == null ? "not available" : formatPercent(value));
 const pointsOrNull = (value: number | null) => value == null ? "not available" : `${formatPercent(value).replace("%", "")} percentage points`;
@@ -98,24 +53,16 @@ const relVolumeOrNull = (value: number | null) => (value == null ? "not availabl
 /** Bound input size while favoring dated company events over opinion/roundup noise.
  * Indices always refer to the original full news array. */
 export function selectStockNews(story: StoryInput) {
-  return story.news.map((item, index) => ({ item, index })).sort((a, b) => {
-    const score = ({ item }: { item: StoryNewsItem }) =>
-      (mentionsSymbol(story.symbol, item.headline) ? 4 : 0)
-      + (/earnings|revenue|guidance|order|contract|deal|acqui|regulat|launch|demand|supply|antitrust/i.test(item.headline) ? 3 : 0)
-      + (!isAtOrAfterClose(new Date(item.publishedAt)) ? 2 : 0)
-      - (/better buy|buy now|stock to buy|stocks to buy|by 2030|over the next|starting now|you invest|stocks that explain|roundup|spotlight|valuation already|which.*stock/i.test(item.headline) ? 4 : 0);
-    return score(b) - score(a) || a.index - b.index;
-  }).slice(0, 6).sort((a, b) => a.index - b.index);
+  return selectTopArticles(story.news, (item) =>
+    (mentionsSymbol(story.symbol, item.headline) ? 4 : 0)
+    + (/earnings|revenue|guidance|order|contract|deal|acqui|regulat|launch|demand|supply|antitrust/i.test(item.headline) ? 3 : 0)
+    + (!isAtOrAfterClose(new Date(item.publishedAt)) ? 2 : 0)
+    - (/better buy|buy now|stock to buy|stocks to buy|by 2030|over the next|starting now|you invest|stocks that explain|roundup|spotlight|valuation already|which.*stock/i.test(item.headline) ? 4 : 0));
 }
 
 
-export function buildStoryPrompt(
-  symbol: string,
-  story: StoryInput,
-  news: StoryNewsItem[],
-  sectorChangePercent: number | null,
-  marketChangePercent: number | null,
-): string {
+export function buildStoryPrompt(story: StoryInput): AnalysisPrompt {
+  const { symbol, sectorChangePercent, marketChangePercent } = story;
   const company = NAME_BY_SYMBOL.get(symbol) ?? symbol;
 
   const article = (item: StoryNewsItem) => ({
@@ -163,12 +110,12 @@ export function buildStoryPrompt(
       epsTrend: story.fundamentals.epsGrowthTrend, revenueTrend: story.fundamentals.revenueGrowthTrend,
     } : null,
     missingEvidence: { numericalFundamentals: story.fundamentals == null, relativeVolume: story.price.relativeVolume == null },
-    news: selectStockNews({ ...story, news }).map(({ item }) => article(item)),
+    news: selectStockNews(story).map(({ item }) => article(item)),
     business: (story.businessContext ?? []).slice(0, 4).map((item) => article(item)),
     filings: story.secFilings,
   };
 
-  return `INSTRUCTIONS
+  return { input, instructions: `INSTRUCTIONS
 Write Today's Story for ${company} (${symbol}). The reader already sees the
 numbers; each card must answer its question with reasons. Use only the Input.
 Copy figures exactly with their signs (e.g. +3.97%, never "nearly 4%"); do not
@@ -234,40 +181,12 @@ FINAL CHECKS (re-read every card against the Input before returning)
 5. Missing data stays unknown: never "no fundamentals/earnings were released".
 6. No motives, sentiment, forecasts or advice, including in YTD and in any
    competing reading. Each card says something no other card says.
-
-Input:
-${JSON.stringify(input)}`;
+` };
 }
 
 async function loadDailyCloses(symbol: string, day: string): Promise<StoryDailyClose[]> {
   const rows = await readDailyCloses(`story-closes:${symbol}`, [symbol], day);
   return rows.map(({ tradingDay, close, changePercent }) => ({ tradingDay, close, changePercent }));
-}
-
-/** Today's news for one symbol, in the shape story-input.ts needs. */
-async function loadNews(symbol: string, day: string): Promise<StoryNewsItem[]> {
-  const { from, to } = dayWindow(day);
-  const { data, error } = await db
-    .from("news")
-    .select("headline, source_url, related_symbols, published_at, news_summaries(summary), news_evidence(source_text)")
-    .contains("related_symbols", [symbol])
-    .gte("published_at", from)
-    .lt("published_at", to)
-    .order("published_at", { ascending: false });
-  if (error) throw new Error(`news read for ${symbol}: ${error.message}`);
-  return (data ?? [])
-    .filter((row) => tradingDay(new Date(row.published_at as string)) === day)
-    .map((row) => ({
-      headline: row.headline as string,
-      sourceText: (row.news_evidence as unknown as { source_text: string } | null)?.source_text ?? null,
-      // news_id is news_summaries' primary key, so PostgREST embeds a single
-      // object here even though the client's inferred type says array — same
-      // shape day-data.ts and queries.ts already read this join as.
-      summary: (row.news_summaries as unknown as { summary: string } | null)?.summary ?? null,
-      sourceUrl: row.source_url as string,
-      publishedAt: row.published_at as string,
-      relatedSymbols: (row.related_symbols as string[] | null) ?? [],
-    }));
 }
 
 /** This symbol's own Form 8-K filing(s) dated today, if any (see migration 0013). */
@@ -306,53 +225,40 @@ async function loadFilings(symbol: string, day: string): Promise<StorySecFiling[
 export async function generateOneStory(
   symbol: string,
   day: string,
-  prices: Map<string, PriceRow>,
+  tickers: Map<string, Ticker>,
 ): Promise<void> {
-  const price = prices.get(symbol);
-  if (!price) throw new Error(`${symbol}: no price row`);
-  if (tradingDay(new Date(price.updated_at)) !== day) {
-    throw new Error(`${symbol}: price row belongs to another session, not ${day}`);
-  }
+  const price = tickers.get(symbol);
+  if (!price) throw new Error(`${symbol}: no figures for ${day}`);
 
   const peerSymbols = PEERS[symbol] ?? [];
   // Paired with its own symbol, not just collected into a bare number list —
   // a peer missing from price_cache is simply absent, same as before.
   const peerBreakdown = peerSymbols.flatMap((peerSymbol) => {
-    const peer = prices.get(peerSymbol);
-    return peer ? [{ symbol: peerSymbol, changePercent: Number(peer.change_percent) }] : [];
+    const peer = tickers.get(peerSymbol);
+    return peer ? [{ symbol: peerSymbol, changePercent: peer.changePercent }] : [];
   });
-  const sectorChangePercent = prices.get(SECTOR_SYMBOL)?.change_percent;
-  const marketChangePercent = prices.get(MARKET_SYMBOL)?.change_percent;
 
   const [dailyCloses, fundamentals, news, secFilings, businessContext, tenYearYield] = await Promise.all([
     loadDailyCloses(symbol, day),
     loadStoryFundamentals(symbol, day),
-    loadNews(symbol, day),
+    readDayNews({ symbols: [symbol] }, day),
     loadFilings(symbol, day),
     loadBusinessContext(symbol, day),
     loadTenYearYield(day),
   ]);
 
-  const changePercent = Number(price.change_percent);
-  const relVolume = relativeVolume(price.volume, price.avg_volume);
-
-  const periodPerformance = computePeriodPerformance(
-    dailyCloses.map((c) => ({ tradingDay: c.tradingDay, close: c.close })),
-    day,
-  );
-
   const storyInput = buildStoryInput({
     symbol,
     sessionDay: day,
-    price: Number(price.price),
-    changePercent,
-    relativeVolume: relVolume,
+    price: price.price,
+    changePercent: price.changePercent,
+    relativeVolume: price.relativeVolume,
     peerSymbols,
     peerBreakdown,
-    sectorChangePercent: sectorChangePercent == null ? null : Number(sectorChangePercent),
-    marketChangePercent: marketChangePercent == null ? null : Number(marketChangePercent),
+    sectorChangePercent: tickers.get(SECTOR_SYMBOL)?.changePercent ?? null,
+    marketChangePercent: tickers.get(MARKET_SYMBOL)?.changePercent ?? null,
     dailyCloses,
-    periodPerformance,
+    periodPerformance: computePeriodPerformance(dailyCloses, day, price.price),
     fundamentals,
     businessContext,
     news,
@@ -360,9 +266,7 @@ export async function generateOneStory(
     tenYearYield,
   });
 
-  const sections = await generateStorySections(storyInput,
-    sectorChangePercent == null ? null : Number(sectorChangePercent),
-    marketChangePercent == null ? null : Number(marketChangePercent));
+  const sections = await generateStorySections(storyInput);
 
   const { error } = await db.from("stories").upsert(
     {
@@ -377,26 +281,16 @@ export async function generateOneStory(
 }
 
 /** The same narrative call for scheduled generation and reviewed historical replay. */
-export async function generateStorySections(
-  storyInput: StoryInput,
-  sectorChangePercent: number | null,
-  marketChangePercent: number | null,
-): Promise<StorySections> {
-  const prompt = buildStoryPrompt(
-    storyInput.symbol,
-    storyInput,
-    storyInput.news,
-    sectorChangePercent,
-    marketChangePercent,
-  );
-  const data = await generateValidatedAnalysis<GroqModel>(`stock:${storyInput.sessionDay}:${storyInput.symbol}`,
-    prompt, analysisSchema(REQUIRED_STRING_KEYS, true, [...new Set(selectStockNews(storyInput).map(({ item }) => item.headline))]), (candidate) => {
-      const missingKeys: string[] = REQUIRED_STRING_KEYS.filter((key) => typeof candidate[key] !== "string" || !candidate[key].trim());
-      if (typeof candidate.headline?.text !== "string" || !candidate.headline.text.trim()) missingKeys.push("headline.text");
-      if (missingKeys.length) throw new Error(`Missing analytical sections: ${missingKeys.join(", ")}`);
+export async function generateStorySections(storyInput: StoryInput): Promise<StorySections> {
+  const prompt = buildStoryPrompt(storyInput);
+  const picks = selectStockNews(storyInput);
+  const schema = analysisSchema(STOCK_SECTION_KEYS, { headlineSources: [...new Set(picks.map(({ item }) => item.headline))] });
+  const data = await generateValidatedAnalysis<GroqModel>(
+    { kind: "stock", day: storyInput.sessionDay, symbol: storyInput.symbol }, prompt, schema, (candidate) => {
       const result = candidate as unknown as Record<string, unknown>;
+      requireSections(result, STOCK_SECTION_KEYS, "Missing analytical sections", true);
       runAllChecks([
-        () => validatePublishedFigures(result, prompt),
+        () => validatePublishedFigures(result, prompt.input),
         () => validateStockTrend(result, storyInput),
         () => validateNoFlatMoves(result, [
           { names: [storyInput.symbol, NAME_BY_SYMBOL.get(storyInput.symbol) ?? storyInput.symbol], changePercent: storyInput.price.changePercent },
@@ -405,46 +299,36 @@ export async function generateStorySections(
       ]);
     });
   const picked = data.headline.sourceHeadline == null ? undefined
-    : selectStockNews(storyInput).find(({ item }) => item.headline === data.headline.sourceHeadline)?.item;
+    : picks.find(({ item }) => item.headline === data.headline.sourceHeadline)?.item;
   const pickedNews = picked ? { headline: picked.headline, sourceUrl: picked.sourceUrl, publishedAt: picked.publishedAt } : null;
 
   return {
     headline: { text: data.headline.text, news: pickedNews },
-    comparison: data.comparison,
-    classification: data.classification,
-    unusualness: data.unusualness,
-    explanation: data.explanation,
-    fundamentals: data.fundamentals,
-    peerSectorRelation: data.peerSectorRelation,
-    ytdTakeaway: data.ytdTakeaway,
-  };
+    ...Object.fromEntries(STOCK_SECTION_KEYS.map((key) => [key, data[key]])),
+  } as StorySections;
 }
 
 /**
- * `day` exists for manual triggers, mirroring daily-summary.ts. The schedule
- * always runs on the current New York trading day.
+ * `day` exists for manual triggers, mirroring daily-summary.ts. Omitted, it is
+ * the newest session the snapshots record. Only the live session is written:
+ * a past day's relative volume and peers would have to be rebuilt from
+ * history, which is what scripts/backfill-story-analysis.mts does instead.
  */
-export async function generateStories(day: string = tradingDay()): Promise<StoryGenerationResult> {
+export async function generateStories(day?: string): Promise<StoryGenerationResult> {
+  const session = await readSessionTickers(
+    [...new Set([...TOP_20_SYMBOLS, ...Object.values(PEERS).flat(), SECTOR_SYMBOL, MARKET_SYMBOL])],
+    day,
+  );
   // Through readRows, not bare `{ data }`: a failed read must throw rather
-  // than arrive as an empty done-set (re-spending AI calls on finished stocks)
-  // or an empty price map (every stock reported stale).
-  const [doneRows, priceRows] = await Promise.all([
-    readRows<{ symbol: string }>("story-done", (signal) =>
-      db.from("stories").select("symbol").eq("story_date", day).abortSignal(signal),
-    ),
-    readRows<PriceRow>("story-prices", (signal) =>
-      db
-        .from("price_cache")
-        .select("symbol, price, change, change_percent, volume, avg_volume, updated_at")
-        .abortSignal(signal),
-    ),
-  ]);
-
+  // than arrive as an empty done-set (re-spending AI calls on finished stocks).
+  const doneRows = await readRows<{ symbol: string }>("story-done", (signal) =>
+    db.from("stories").select("symbol").eq("story_date", session.day).abortSignal(signal),
+  );
   const done = new Set(doneRows.map((r) => r.symbol));
-  const prices = new Map(priceRows.map((r) => [r.symbol, r]));
+  const tickers = session.isLive ? session.tickers : new Map<string, Ticker>();
 
   const result: StoryGenerationResult = {
-    tradingDay: day,
+    tradingDay: session.day,
     alreadyDone: done.size,
     generated: [],
     stale: [],
@@ -454,8 +338,7 @@ export async function generateStories(day: string = tradingDay()): Promise<Story
 
   const active: string[] = [];
   for (const symbol of TOP_20_SYMBOLS) {
-    const price = prices.get(symbol);
-    if (!price || tradingDay(new Date(price.updated_at)) !== day) {
+    if (!tickers.has(symbol)) {
       result.stale.push(symbol);
       continue;
     }
@@ -463,17 +346,14 @@ export async function generateStories(day: string = tradingDay()): Promise<Story
   }
 
   // A rejected first symbol must not consume every tick and starve other names.
-  const { data: attempts, error: attemptsError } = await db.from("story_analysis_attempts")
-    .select("attempt_key,updated_at").like("attempt_key", `stock:${day}:%`);
-  if (attemptsError) throw new Error(`story retry order: ${attemptsError.message}`);
-  const attemptedAt = new Map((attempts ?? []).map((r) => [r.attempt_key, r.updated_at]));
+  const attemptedAt = await stockAttemptTimes(session.day);
   const batch = active.filter((symbol) => !done.has(symbol))
-    .sort((a, b) => (attemptedAt.get(`stock:${day}:${a}`) ?? "").localeCompare(attemptedAt.get(`stock:${day}:${b}`) ?? ""))
+    .sort((a, b) => (attemptedAt.get(a) ?? "").localeCompare(attemptedAt.get(b) ?? ""))
     .slice(0, STOCKS_PER_RUN);
 
   for (const symbol of batch) {
     try {
-      await generateOneStory(symbol, day, prices);
+      await generateOneStory(symbol, session.day, tickers);
       result.generated.push(symbol);
     } catch (error) {
       if (error instanceof GroqRateLimitError) {
@@ -488,8 +368,8 @@ export async function generateStories(day: string = tradingDay()): Promise<Story
 }
 
 export function validateStockTrend(data: Record<string, unknown>, story: StoryInput): void {
-  for (const key of ["headline", ...REQUIRED_STRING_KEYS.filter((k) => k !== "unusualness")]) {
-    const text = (key === "headline" ? (data.headline as { text?: string })?.text ?? "" : String(data[key] ?? "")).replace(/[\u2010-\u2015\u2212]/g, "-");
+  for (const key of ["headline", ...STOCK_SECTION_KEYS.filter((k) => k !== "unusualness")]) {
+    const text = normalizeDashes(key === "headline" ? (data.headline as { text?: string })?.text ?? "" : String(data[key] ?? ""));
     if (/10[- ](?:trading[- ]|day)|confirmed reversal|net window|(?:against|interrupt|continu)[^.]{0,25}\b(?:uptrend|downtrend)\b/i.test(text)) throw new Error(`${key}: Recent Trend outside unusualness`);
   }
   if (!story.fundamentals) {
@@ -497,12 +377,8 @@ export function validateStockTrend(data: Record<string, unknown>, story: StoryIn
     if (/(?:^|[.!?]\s+)(?:no|there (?:was|were) no)[^.]{0,90}(?:earnings|results|fundamentals|figures|financials)[^.]{0,50}(?:released|reported|published|release occurred|release happened)/i.test(business)) throw new Error("fundamentals: missing snapshot does not establish that no earnings were released");
   }
   if (/annual outperformance|(?:year|YTD|annual)[^.]{0,100}(?:outperform|underperform)[^.]{0,50}market/i.test(String(data.ytdTakeaway ?? ""))) throw new Error("ytdTakeaway: market YTD comparison is not provided");
-  const trend = story.recentTrend;
-  if (trend.direction == null) return;
-  const text = String(data.unusualness ?? "").replace(/[\u2010-\u2015\u2212]/g, "-");
-  const direction = trend.direction === "no-clear-trend" ? /no[- ]clear(?:[- ]directional)?[- ]trend/i : new RegExp(trend.direction, "i");
-  if (!direction.test(text) || (trend.windowChangePercent != null && !hasSuppliedPercent(text, trend.windowChangePercent))) throw new Error("unusualness: missing supplied trend direction/net change");
-  const age = trend.reversalDaysAgo;
-  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-  if (age != null && !new RegExp(`(?:${age}|${words[age] ?? age})\\s+(?:trading[- ]?)?days?`, "i").test(text)) throw new Error("unusualness: missing latest swing-point age");
+  validateTrendStated(String(data.unusualness ?? ""), story.recentTrend, {
+    direction: "unusualness: missing supplied trend direction/net change",
+    age: "unusualness: missing latest swing-point age",
+  });
 }

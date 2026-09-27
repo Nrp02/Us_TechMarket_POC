@@ -62,10 +62,10 @@ export default async function Market({
   const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
   const trackedStocks = TRACKED_STOCK_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
 
-  // Market Story's charts read the exact same aggregates the Groq prompt was
-  // built from (see market-story-generation.ts's buildPrompt) — computed
-  // here rather than fetched, so a chart and the sentence beside it can
-  // never disagree about a number.
+  // Market Story's charts use the same aggregates the Groq prompt was built
+  // from (computeTopMovers / computeSectorAverages), over this session's
+  // tickers — the same figures the job read, unless a symbol's close was
+  // never stored for a past session.
   const topMovers = computeTopMovers(trackedStocks);
   const sectorAverages = computeSectorAverages(trackedStocks);
 
@@ -100,6 +100,7 @@ export default async function Market({
         sectorAverages={sectorAverages}
         indices={indices}
         indexDailyCloses={indexDailyCloses}
+        day={currentDay}
       />
 
       {/* Market News runs full width, its three articles in a row rather than

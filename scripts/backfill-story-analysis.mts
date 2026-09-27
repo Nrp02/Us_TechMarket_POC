@@ -4,19 +4,25 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { loadHistoricalStoryInputs } from "../src/lib/story-history.ts";
 import { db } from "../src/lib/supabase.ts";
-import { validatePublishedFigures } from "../src/lib/story-analysis-quality.ts";
+import { requireSections, validatePublishedFigures } from "../src/lib/story-analysis-quality.ts";
 import { buildStoryPrompt, validateStockTrend } from "../src/lib/story-generation.ts";
 import type { StoryInput } from "../src/lib/story-input.ts";
-import type { StorySections } from "../src/lib/story-generation.ts";
-import type { MarketStorySections } from "../src/lib/market-story-generation.ts";
+import { MARKET_SECTION_KEYS, STOCK_SECTION_KEYS, type MarketStorySections, type StorySections } from "../src/lib/story-sections.ts";
 import { buildMarketStoryPrompt, validateMarketTrend } from "../src/lib/market-story-generation.ts";
 import { TOP_20_SYMBOLS } from "../src/lib/symbols.ts";
 
 type HistoricalInput = Awaited<ReturnType<typeof loadHistoricalStoryInputs>>;
 type Draft = { stocks: { symbol: string; story_date: string; sections: StorySections }[]; market: { story_date: string; sections: MarketStorySections }[] };
 const DAYS = ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"];
-const STOCK_KEYS = ["comparison", "classification", "unusualness", "explanation", "fundamentals", "peerSectorRelation", "ytdTakeaway"];
-const MARKET_KEYS = ["overallRead", "standoutMovers", "sectorLeadership", "breadth", "marketEvents", "macroContext", "volatilityContext", "closingSynthesis"];
+/** Inputs exported before StoryInput carried its own XLK/SPY moves. */
+function withIndexMoves(input: HistoricalInput): HistoricalInput {
+  const move = (symbol: string) => input.market.indices.find((i) => i.symbol === symbol)?.changePercent ?? null;
+  for (const stock of input.stocks) {
+    stock.sectorChangePercent ??= move("XLK");
+    stock.marketChangePercent ??= move("SPY");
+  }
+  return input;
+}
 const path = process.argv[2];
 if (!path) throw new Error("Usage: backfill-story-analysis.mts output.json [--ai] OR draft.json --validate|--write");
 
@@ -24,7 +30,10 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
   const inputsFlag = process.argv.indexOf("--inputs");
   const inputs = inputsFlag >= 0 ? JSON.parse(readFileSync(process.argv[inputsFlag + 1], "utf8")) as HistoricalInput[] : [];
   if (!inputs.length) for (const day of DAYS) inputs.push(await loadHistoricalStoryInputs(day));
-  for (const input of inputs) input.market.coverage ??= { availableStocks: input.coverage.availableStocks, expectedStocks: input.coverage.expectedStocks };
+  for (const input of inputs) {
+    input.market.coverage ??= { availableStocks: input.coverage.availableStocks, expectedStocks: input.coverage.expectedStocks };
+    withIndexMoves(input);
+  }
   if (process.argv.includes("--ai")) {
     const { generateStorySections } = await import("../src/lib/story-generation.ts");
     const { generateMarketStorySections } = await import("../src/lib/market-story-generation.ts");
@@ -49,9 +58,7 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
         try {
           const { input, stock } = task;
           if (stock) {
-            const sector = input.market.indices.find((i) => i.symbol === "XLK")?.changePercent ?? null;
-            const broad = input.market.indices.find((i) => i.symbol === "SPY")?.changePercent ?? null;
-            const sections = await generateStorySections(stock, sector, broad);
+            const sections = await generateStorySections(stock);
             draft.stocks.push({ symbol: stock.symbol, story_date: input.day, sections });
           } else draft.market.push({ story_date: input.day, sections: await generateMarketStorySections(input.market) });
           writeFileSync(path, JSON.stringify(draft, null, 2));
@@ -72,7 +79,7 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
   console.log(JSON.stringify(inputs.map(({ day, stocks, coverage }) => ({ day, stockInputs: stocks.length, coverage }))));
 } else {
   const draft = JSON.parse(readFileSync(path, "utf8")) as Draft;
-  const inputs = JSON.parse(readFileSync(`${path}.inputs.json`, "utf8")) as HistoricalInput[];
+  const inputs = (JSON.parse(readFileSync(`${path}.inputs.json`, "utf8")) as HistoricalInput[]).map(withIndexMoves);
   if (draft.stocks?.length !== 100 || draft.market?.length !== 5) throw new Error("Expected exactly 100 stocks and 5 market stories");
   const stockIds = new Set<string>();
   for (const row of draft.stocks) {
@@ -82,16 +89,11 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
     stockIds.add(id);
     const input = inputs.find((d) => d.day === row.story_date)?.stocks.find((s) => s.symbol === row.symbol);
     if (!input) throw new Error(`${id}: missing captured evidence`);
-    const market = inputs.find((d) => d.day === row.story_date)!.market;
-    const prompt = buildStoryPrompt(row.symbol, input, input.news,
-      market.indices.find((i) => i.symbol === "XLK")?.changePercent ?? null,
-      market.indices.find((i) => i.symbol === "SPY")?.changePercent ?? null);
-    validatePublishedFigures(row.sections as unknown as Record<string, unknown>, prompt);
+    validatePublishedFigures(row.sections as unknown as Record<string, unknown>, buildStoryPrompt(input).input);
     validateStockTrend(row.sections as unknown as Record<string, unknown>, input);
-    for (const key of STOCK_KEYS) if (typeof row.sections[key as keyof StorySections] !== "string" || !String(row.sections[key as keyof StorySections]).trim()) throw new Error(`${id}: missing ${key}`);
-    if (!row.sections.headline?.text?.trim()) throw new Error(`${id}: missing headline`);
-    for (const key of ["headline", ...STOCK_KEYS.filter((k) => k !== "unusualness")]) {
-      const text = key === "headline" ? row.sections.headline.text : row.sections[key as keyof StorySections];
+    requireSections(row.sections as unknown as Record<string, unknown>, STOCK_SECTION_KEYS, `${id}: missing`, true);
+    for (const key of ["headline", ...STOCK_SECTION_KEYS.filter((k) => k !== "unusualness")] as const) {
+      const text = key === "headline" ? row.sections.headline.text : row.sections[key];
       if (/Recent Trend:|10.trading.day|confirmed reversal|net window change/i.test(String(text))) throw new Error(`${id}: trend outside unusualness`);
     }
   }
@@ -101,9 +103,9 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
     marketIds.add(row.story_date);
     const input = inputs.find((d) => d.day === row.story_date)?.market;
     if (!input) throw new Error("Missing captured market evidence");
-    validatePublishedFigures(row.sections as unknown as Record<string, unknown>, buildMarketStoryPrompt(input));
+    validatePublishedFigures(row.sections, buildMarketStoryPrompt(input).input);
     validateMarketTrend(row.sections, input);
-    for (const key of MARKET_KEYS) if (typeof row.sections[key as keyof MarketStorySections] !== "string" || !String(row.sections[key as keyof MarketStorySections]).trim()) throw new Error(`${row.story_date}: missing ${key}`);
+    requireSections(row.sections, MARKET_SECTION_KEYS, `${row.story_date}: missing`);
   }
   if (process.argv.includes("--validate")) {
     console.log(JSON.stringify({ validatedStocks: stockIds.size, validatedMarket: marketIds.size }));

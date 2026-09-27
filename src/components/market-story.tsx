@@ -5,7 +5,9 @@ import { SectionHeading } from "@/components/section-heading";
 import { RangeBar, RankedBars, YtdChart } from "@/components/story-charts";
 import { formatEtTime } from "@/lib/format";
 import type { SectorAverage, TopMover } from "@/lib/market-breadth";
+import { ytdSeries } from "@/lib/period-performance";
 import type { MarketStory as MarketStoryData, Ticker } from "@/lib/queries";
+import { computeRangePosition } from "@/lib/volatility";
 
 // The Market page's centrepiece — the whole-market counterpart to
 // todays-story.tsx, same visual pattern exactly: full-width stacked
@@ -35,8 +37,10 @@ import type { MarketStory as MarketStoryData, Ticker } from "@/lib/queries";
 // Every figure any chart below draws is already fetched by page.tsx for
 // the Groq prompt itself (topMovers/sectorAverages via computeTopMovers/
 // computeSectorAverages, indexDailyCloses via getIndexDailyCloses) — no
-// new query, and the same computation the narrative was written from, so a
-// chart and the sentence beside it can never disagree about a number.
+// new query. The range and YTD charts go through the prompt's own functions
+// (computeRangePosition, ytdSeries), so they draw what the sentence states.
+// The movers and sector bars are recomputed from this render's tickers: the
+// same rule as the prompt, over the same session's figures.
 
 const VIXY_SYMBOL = "VIXY";
 const VIXY_LABEL = "Volatility (VIXY)";
@@ -88,30 +92,27 @@ function ariaLabelFor(prefix: string, rows: { label: string; value: number }[]) 
     .join(", ")}.`;
 }
 
-/** Undefined when VIXY's own trailing range has no width to plot — never a flat line. */
+/** Undefined when VIXY's own trailing range has no width to plot — the prompt's range, never a flat line. */
 function volatilityRangeChart(
   indexDailyCloses: { symbol: string; close: number }[],
   vixyPrice: number | undefined,
 ): ReactNode {
   if (vixyPrice == null) return undefined;
   const closes = indexDailyCloses.filter((row) => row.symbol === VIXY_SYMBOL).map((row) => row.close);
-  if (closes.length === 0) return undefined;
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  if (min === max) return undefined;
-  return <RangeBar min={min} max={max} current={vixyPrice} />;
+  const range = computeRangePosition(vixyPrice, closes);
+  if (range.min == null || range.max == null) return undefined;
+  return <RangeBar min={range.min} max={range.max} current={vixyPrice} />;
 }
 
-/** Undefined before there are at least two of this year's XLK closes to draw a line from — same guard todays-story.tsx's ytdChart applies per stock. */
-function marketYtdChart(indexDailyCloses: { symbol: string; tradingDay: string; close: number }[]): ReactNode {
-  const xlkCloses = indexDailyCloses.filter((row) => row.symbol === MARKET_YTD_SYMBOL);
-  if (xlkCloses.length === 0) return undefined;
-  const newestYear = xlkCloses
-    .reduce((newest, row) => (row.tradingDay > newest.tradingDay ? row : newest))
-    .tradingDay.slice(0, 4);
-  const ytdCloses = xlkCloses.filter((row) => row.tradingDay.slice(0, 4) === newestYear);
-  if (ytdCloses.length < 2) return undefined;
-  return <YtdChart closes={ytdCloses} />;
+/** Undefined before there are two points to draw — the span XLK's YTD figure measures, same as todays-story.tsx. */
+function marketYtdChart(
+  indexDailyCloses: { symbol: string; tradingDay: string; close: number }[],
+  day: string,
+  xlkPrice: number | undefined,
+): ReactNode {
+  if (xlkPrice == null) return undefined;
+  const series = ytdSeries(indexDailyCloses.filter((row) => row.symbol === MARKET_YTD_SYMBOL), day, xlkPrice);
+  return series.length < 2 ? undefined : <YtdChart closes={series} />;
 }
 
 export function MarketStory({
@@ -120,6 +121,7 @@ export function MarketStory({
   sectorAverages,
   indices,
   indexDailyCloses,
+  day,
 }: {
   story: MarketStoryData | null;
   topMovers: { gainers: TopMover[]; losers: TopMover[] };
@@ -127,6 +129,8 @@ export function MarketStory({
   /** INDEX_SYMBOLS' tickers, for VIXY's current price — same list Market Overview already renders. */
   indices: Ticker[];
   indexDailyCloses: { symbol: string; tradingDay: string; close: number; changePercent: number | null }[];
+  /** The session the story and the figures describe. */
+  day: string;
 }) {
   if (!story) {
     return (
@@ -144,7 +148,7 @@ export function MarketStory({
   const vixyRange = volatilityRangeChart(indexDailyCloses, vixyPrice);
   const volatilityChart = vixyRange && <LabeledChart label={VIXY_LABEL} chart={vixyRange} />;
 
-  const xlkYtd = marketYtdChart(indexDailyCloses);
+  const xlkYtd = marketYtdChart(indexDailyCloses, day, indices.find((t) => t.symbol === MARKET_YTD_SYMBOL)?.price);
   const ytdChart = xlkYtd && <LabeledChart label={MARKET_YTD_LABEL} chart={xlkYtd} />;
 
   const moverRows = moversRows(topMovers);
