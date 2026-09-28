@@ -49,7 +49,7 @@ const SWITCHER_SYMBOLS = [...TOP_20_SYMBOLS].sort();
 // the 60s window it costs nothing. If the symbol is untracked the page 404s
 // anyway; the fallback keeps the tab sane on the way there.
 // Headroom for the read path's retry budget in lib/db-read.ts — see the note on
-// the same export in app/page.tsx.
+// the same export in app/(market)/page.tsx.
 export const maxDuration = 30;
 
 export async function generateMetadata({

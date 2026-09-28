@@ -1,8 +1,9 @@
 import { SkeletonPage, SkeletonPanel } from "@/components/skeleton";
 
-// The one page with a raised element, and the skeleton keeps that rank: the
-// summary card is `panel-raised` here too, so the hierarchy is legible before
-// a single word of the narrative exists.
+// In page.tsx order: stat cards, the chart with the events panel beside it,
+// the timeline, the AI Daily Summary, then Today's Story, whose opening card
+// is the page's one raised element. The skeleton keeps that rank so the
+// hierarchy is legible before a word of the narrative exists.
 //
 // Grid string below must stay byte-identical with activity-stats.tsx — see
 // The Mirrored Grid Rule in DESIGN.md. Today's Story widened the real grid
@@ -13,32 +14,46 @@ import { SkeletonPage, SkeletonPanel } from "@/components/skeleton";
 export default function Loading() {
   return (
     <SkeletonPage>
-      <div className="h-[92px]" aria-hidden />
+      {/* Heights below are measured off the rendered page (NVDA, 2026-09-25)
+          at the widths where each block steps. Only blocks that can reach the
+          first 1000px are fitted; text height varies continuously with
+          width, so between steps the fit is approximate. */}
+
+      {/* Header: stacks below 600, two rows to 680, one row from 768. */}
+      <div
+        className="h-[197px] min-[600px]:h-[169px] min-[680px]:h-[106px] min-[768px]:h-[78px]"
+        aria-hidden
+      />
+
+      {/* The provenance note under the header. */}
+      <SkeletonPanel className="h-[104px] min-[600px]:h-[65px] xl:h-[46px]" />
 
       <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-4">
         {Array.from({ length: 7 }, (_, i) => (
-          <SkeletonPanel key={i} className="h-[152px]" />
+          <SkeletonPanel key={i} className="h-[140px] min-[600px]:h-[149px] min-[768px]:h-[140px] min-[1000px]:h-[130px]" />
         ))}
       </div>
 
-      {/* panel-raised, and with bars for the same reason as the rest: the one
-          element on the page that outranks its neighbours should still look
-          like it while it is empty. Sized for the 8-section Today's Story
-          (headline + 7 labelled sections + footer note) rather than the old
-          3-field summary it replaced — the old fixed 420px was tuned to six
-          lines and left the real card growing ~3x underneath it, which is a
-          layout shift no skeleton should be causing. */}
-      <div className="panel-raised flex flex-col gap-5 p-6 sm:p-8" aria-hidden>
-        {/* Headline: one wide line. */}
+      {/* Same tracks as page.tsx, so nothing settles sideways on arrival. The
+          chart's height follows its width, so it steps with the column. */}
+      <div className="grid grid-cols-1 gap-10 min-[1130px]:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] min-[1130px]:items-start min-[1130px]:gap-6">
+        <SkeletonPanel
+          className="h-[342px] min-[768px]:h-[360px] min-[1000px]:h-[450px] min-[1130px]:h-[410px] min-[1440px]:h-[484px]"
+          lines={4}
+        />
+        <SkeletonPanel className="h-[219px] min-[600px]:h-[197px] min-[1130px]:h-[219px]" lines={4} />
+      </div>
+
+      <SkeletonPanel className="h-[900px]" lines={6} />
+
+      {/* The AI Daily Summary: a plain panel since Today's Story took the
+          raised rank. */}
+      <SkeletonPanel className="h-[260px]" lines={4} />
+
+      <div className="panel-raised flex flex-col gap-3 p-6 sm:p-8" aria-hidden>
         <span className="block h-4 rounded-full bg-surface-soft" style={{ width: "92%" }} />
-        {/* Seven labelled sections: a short label bar, then two lines of body. */}
-        {Array.from({ length: 7 }, (_, i) => (
-          <div key={i} className="flex flex-col gap-2">
-            <span className="block h-2.5 w-24 rounded-full bg-surface-soft" />
-            <span className="block h-3 rounded-full bg-surface-soft" style={{ width: "94%" }} />
-            <span className="block h-3 rounded-full bg-surface-soft" style={{ width: "68%" }} />
-          </div>
-        ))}
+        <span className="block h-4 rounded-full bg-surface-soft" style={{ width: "76%" }} />
+        <span className="block h-3 rounded-full bg-surface-soft" style={{ width: "44%" }} />
       </div>
     </SkeletonPage>
   );

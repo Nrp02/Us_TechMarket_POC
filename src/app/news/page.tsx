@@ -51,7 +51,7 @@ function buildHref(
 }
 
 // Headroom for the read path's retry budget in lib/db-read.ts — see the note on
-// the same export in app/page.tsx.
+// the same export in app/(market)/page.tsx.
 export const maxDuration = 30;
 
 export default async function News({

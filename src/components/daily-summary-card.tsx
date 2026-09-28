@@ -31,22 +31,12 @@ export function DailySummaryCard({
       </SectionHeading>
 
       {summary ? (
-        // panel-raised, not panel: this is the one other section on the page
-        // (besides Today's Story's own headline) that sits a full elevation
-        // step above its neighbours, which is why it carries the same corner
-        // wash. `isolate` lets the wash sit at -z-10 behind this section's own
-        // text but in front of the page, rather than disappearing under the
-        // backdrop.
-        <div className="panel-raised relative isolate overflow-hidden p-6 sm:p-8">
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -left-24 -top-32 -z-10 size-96 rounded-full opacity-[0.18]"
-            style={{
-              background:
-                "radial-gradient(closest-side, var(--color-weather), transparent)",
-            }}
-          />
-
+        // panel, not panel-raised. It was raised too, beside Today's Story's
+        // "Worth Your Attention Today" card, which put two raised elements on
+        // one page and said nothing (The One Raised Element Rule). The raised
+        // rank, and the Weather Blue corner wash that goes with it, belong to
+        // the card whose job is to single out what deserves attention.
+        <div className="panel p-6 sm:p-8">
           <div className="grid gap-6 text-lg min-[1050px]:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] min-[1050px]:gap-10">
             <p className="lede text-pretty font-serif text-lg leading-[1.55] text-ink">
               {summary.narrative}
