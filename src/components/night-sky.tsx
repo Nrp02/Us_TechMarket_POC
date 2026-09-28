@@ -11,10 +11,11 @@ import type { CSSProperties } from "react";
 // literals and the clouds are seeded fractals, so the sky is byte-identical on
 // every render and can be hand-tuned.
 //
-// The bright stars scintillate, and nothing else in the product moves. The rule
-// used to be that the stars must not twinkle either; it has been sharpened
-// rather than dropped, and the sharper version is the one worth keeping:
-// **nothing that carries information may move, and the room may.**
+// The room moves; the data does not. The bright stars breathe, three depth
+// layers sway on one slow period (see "Depth" below), and meteors and the
+// pointer effects in `meteors.tsx` / `sky-interaction.tsx` cross it. The rule
+// that governs all of it: **nothing that carries information may move, and
+// the room may.**
 //
 // A price, a change, a badge, a rank and a sparkline are the session, and the
 // session is over — animating any of them would claim something is still
@@ -28,28 +29,25 @@ import type { CSSProperties } from "react";
 // where two of its five roles are actually painted, and both are about
 // PROPORTION rather than hue.
 //
-// THE WEATHER is the only large area of colour in the product, and it is now
-// THREE masses rather than four, arranged as a system rather than a spread:
+// THE WEATHER is the only large area of colour in the product: FIVE masses,
+// arranged as a system rather than a spread (each is annotated in CLOUDS):
 //
-//   DOMINANT   the subject, entering from the right edge at mid-height.
-//   COMPANION  smaller, overlapping the dominant at 0.57 of their combined
-//              radii, so the two read as one weather system. Nearer than about
-//              0.55 and they merge into a single shape; past 0.85 and they
-//              become two unrelated blobs.
-//   DISTANT    the faintest, in the opposite corner at 0.85 of the frame
-//              diagonal — the minimum separation at which two clouds stop
-//              looking related. Its job is depth, not mass.
+//   HAZE       very large and very faint (0.07), centred, so even a phone's
+//              cropped middle band has weather in it.
+//   DRIFT      mid-sized, upper middle-left (0.16): the depth between near
+//              and far, and the left half's answer to the right.
+//   DOMINANT   the subject, upper right, centred inside the crop so it keeps
+//              a silhouette.
+//   COMPANION  overlaps the dominant inside the 0.55-0.85 band of their
+//              combined radii, so the two read as one weather system. Nearer
+//              and they merge; further and they become two unrelated blobs.
+//   DISTANT    the faintest mass, far from the pair. Its job is depth.
 //
-// The previous arrangement was four masses, one per cell of a 3x2 grid. That
-// rule was invented to fix clustering and it did, by forbidding the one thing
-// that makes weather read as weather: masses that belong to each other. Four
-// evenly-spaced clouds are a distribution, not a composition, and the sky read
-// as four blobs someone had placed.
-//
-// The system sits right of frame on purpose. The sky is not composed alone —
-// it is composed underneath the interface, and the navigation rail is a heavy
-// object permanently parked on the left. Weighting the weather right balances
-// the image a visitor actually sees.
+// Evenly spaced masses were tried and read as blobs someone had placed: a
+// distribution, not a composition. The frame's weighted centre sits at about
+// 60% of its width. It used to sit at 74%, to counterweight a navigation rail
+// down the left; navigation is now a card across the top, so that reason
+// expired.
 //
 // How this was arrived at is worth stating, because five rounds of scoring
 // functions produced arrangements that all read as odd: **the director fixes
@@ -89,8 +87,9 @@ import type { CSSProperties } from "react";
 // base, so each mass has a light direction — the same upper-left the panel
 // rims are lit from.
 //
-// The cost is four filtered masks whose regions are each a cloud's bounding
-// box, on a layer that never re-renders — cheaper than the two full-viewport
+// The cost is one filtered mask per mass, each clipped to that cloud's
+// bounding box. The three masses with the heavy filters sit on a layer that
+// never moves, so it is rasterised once — cheaper than the two full-viewport
 // turbulence passes it replaces, which is why the octave count could go up.
 
 // [x, y, radius, opacity] in the 1600x1000 viewBox.
@@ -99,7 +98,7 @@ import type { CSSProperties } from "react";
 // per tier and a density that falls off toward the bottom of the sky. A clump
 // reads as a galaxy, which is the one thing this sky must not look like.
 //
-// DUST is the tier that does the work the old sky was missing: 120 points too
+// DUST is the tier that does the work the old sky was missing: 190 points too
 // faint to read individually, whose only job is to make the field feel
 // occupied rather than empty between the stars that do read.
 const DUST: [number, number, number, number][] = [
@@ -534,14 +533,12 @@ const CLOUDS: {
     //
     // It was carrying 47% of the field's visual weight on its own — 61% with
     // the companion — with both centred at x≈1530 of 1600. The mass-weighted
-    // centroid sat at x 1192, three quarters of the way to the right edge,
-    // against the x 792 the note above still claims. Radii are down a fifth
-    // and opacity from 0.28, which is what brings the pair to ~41%.
+    // centroid sat at x 1192, three quarters of the way to the right edge.
+    // Radii are down a fifth and opacity from 0.28, which is what brings the
+    // pair to ~41% and the centroid to ~x 961.
     //
-    // The reason it sat right is also gone. The note below explains the weight
-    // as a counterbalance to "the navigation rail, a heavy object permanently
-    // parked on the left" — the rail became a card across the top, so the sky
-    // has been balancing against something that is not there.
+    // The reason it sat right is also gone: it counterweighted a navigation
+    // rail on the left, and the rail became a card across the top.
     //
     // Lifted as well as shrunk. At 1470px the viewBox crops to x 65-1535, so a
     // mass centred at 1530 showed only its left flank, which read as a bright
