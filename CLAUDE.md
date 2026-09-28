@@ -6,6 +6,7 @@
 
 - Issue tracker: local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
 - Domain docs: `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
+- Code map: `docs/architecture.md` — read it before exploring the codebase.
 - Visual contract: `DESIGN.md` (generated from code by `/impeccable document`). Product truth: `PRODUCT.md`. Architecture decisions: `docs/adr/`.
 
 ## What this is
