@@ -79,22 +79,31 @@ export function validateTrendStated(
   }
 }
 
-/** An unsigned positive percentage is still positive; preserve negative signs. */
-export function hasSuppliedPercent(text: string, value: number): boolean {
-  const digits = Math.abs(value).toFixed(2).replace(".", "\\.");
-  return new RegExp(`${value < 0 ? "-" : "(?<![-\\d.])\\+?"}${digits}\\s*%`)
-    .test(normalizeDashes(text));
+/**
+ * A written figure matches a supplied one when it is that value rounded to the
+ * decimals the writer used: 2.98 accepts "2.98", "3.0" and "3", never "3.2".
+ * Rounding is not invention; the owner chose not to flag it (2026-09-29).
+ */
+function isRoundingOf(written: string, value: number): boolean {
+  const decimals = written.split(".")[1]?.length ?? 0;
+  return decimals <= 2 && Math.abs(value).toFixed(decimals) === Math.abs(Number(written)).toFixed(decimals);
 }
 
-/** Catches invented/re-rounded percentages; does not establish causal truth. */
+/** An unsigned positive percentage is still positive; preserve negative signs. */
+export function hasSuppliedPercent(text: string, value: number): boolean {
+  return [...normalizeDashes(text).matchAll(/(?<![\d.])([+-]?)(\d+(?:\.\d+)?)\s*%/g)].some(([, sign, digits]) =>
+    (value < 0 ? sign === "-" : sign !== "-") && isRoundingOf(digits, value));
+}
+
+/** Catches invented percentages (rounding of a supplied one is accepted); does not establish causal truth. */
 export function validatePublishedFigures(data: Record<string, unknown>, supplied: unknown): void {
   const input = normalizeDashes(JSON.stringify(supplied));
-  const known = new Set([...input.matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/g)].map((m) => Math.abs(Number(m[1])).toFixed(2)));
+  const known = [...input.matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/g)].map((m) => Number(m[1]));
   for (const [section, value] of Object.entries(data)) {
     const text = typeof value === "string" ? value : section === "headline" ? (value as { text?: string })?.text : null;
     if (!text) continue;
-    for (const match of normalizeDashes(text).matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/g)) {
-      if (!known.has(Math.abs(Number(match[1])).toFixed(2))) throw new Error(`${section}: percentage ${match[0]} is not supplied in the input`);
+    for (const match of normalizeDashes(text).matchAll(/([+-]?)(\d+(?:\.\d+)?)\s*%/g)) {
+      if (!known.some((k) => isRoundingOf(match[2], k))) throw new Error(`${section}: percentage ${match[0]} is not supplied in the input`);
     }
     if (/\b(?:news|business)(?::|\s+)\d+\b/i.test(text)) throw new Error(`${section}: internal evidence ID leaked into published text; name the source topic or publisher instead of News 0/business:0`);
   }
@@ -105,11 +114,17 @@ export function validatePublishedFigures(data: Record<string, unknown>, supplied
  * draft's feedback names every defect rather than just the first.
  */
 export function runAllChecks(checks: (() => void)[]): void {
+  const failures = collectIssues(checks);
+  if (failures.length) throw new Error(failures.join("; "));
+}
+
+/** Every failing check's message, in order; empty when all pass. */
+export function collectIssues(checks: (() => void)[]): string[] {
   const failures: string[] = [];
   for (const check of checks) {
-    try { check(); } catch (error) { failures.push(error instanceof Error ? error.message : String(error)); }
+    try { check(); } catch (error) { failures.push(...(error instanceof Error ? error.message : String(error)).split("; ")); }
   }
-  if (failures.length) throw new Error(failures.join("; "));
+  return failures;
 }
 
 const FLAT = String.raw`(?:flat|unchanged|little[- ]changed|did not move|didn't move|barely budged)`;

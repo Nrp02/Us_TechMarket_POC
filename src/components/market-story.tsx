@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 
-import { SectionCard } from "@/components/section-card";
+import { CheckNotes, SectionCard, StoryDisclosure } from "@/components/section-card";
 import { SectionHeading } from "@/components/section-heading";
 import { RangeBar, RankedBars, YtdChart } from "@/components/story-charts";
 import { formatEtTime } from "@/lib/format";
 import type { SectorAverage, TopMover } from "@/lib/market-breadth";
 import { ytdSeries } from "@/lib/period-performance";
 import type { MarketStory as MarketStoryData, Ticker } from "@/lib/queries";
+import { warningsFor } from "@/lib/story-sections";
 import { computeRangePosition } from "@/lib/volatility";
 
 // The Market page's centrepiece — the whole-market counterpart to
@@ -47,10 +48,11 @@ const VIXY_LABEL = "Volatility (VIXY)";
 const MARKET_YTD_SYMBOL = "XLK";
 const MARKET_YTD_LABEL = "Technology (XLK)";
 
-function SectionText({ text }: { text: string }) {
+function SectionText({ text, warnings }: { text: string; warnings: string[] }) {
   return (
     <div className="panel p-5 sm:p-6">
       <p className="text-pretty font-serif text-base leading-relaxed text-ink">{text}</p>
+      <CheckNotes warnings={warnings} />
     </div>
   );
 }
@@ -151,6 +153,7 @@ export function MarketStory({
   const xlkYtd = marketYtdChart(indexDailyCloses, day, indices.find((t) => t.symbol === MARKET_YTD_SYMBOL)?.price);
   const ytdChart = xlkYtd && <LabeledChart label={MARKET_YTD_LABEL} chart={xlkYtd} />;
 
+  const warn = (key: string) => warningsFor(story.sections.checks, key);
   const moverRows = moversRows(topMovers);
   const sectorLeadershipRows = sectorRows(sectorAverages);
 
@@ -171,6 +174,7 @@ export function MarketStory({
           <p className="text-pretty font-serif text-lg leading-[1.5] text-ink">
             {story.sections.overallRead}
           </p>
+          <CheckNotes warnings={warn("overallRead")} />
         </div>
       </section>
 
@@ -178,6 +182,7 @@ export function MarketStory({
         <SectionHeading>Standout Movers</SectionHeading>
         <SectionCard
           text={story.sections.standoutMovers}
+          warnings={warn("standoutMovers")}
           chart={
             <RankedBars
               rows={moverRows}
@@ -191,6 +196,7 @@ export function MarketStory({
         <SectionHeading>Sector Leadership</SectionHeading>
         <SectionCard
           text={story.sections.sectorLeadership}
+          warnings={warn("sectorLeadership")}
           chart={
             <RankedBars
               rows={sectorLeadershipRows}
@@ -202,27 +208,28 @@ export function MarketStory({
 
       <section>
         <SectionHeading>Breadth</SectionHeading>
-        <SectionText text={story.sections.breadth} />
+        <SectionText text={story.sections.breadth} warnings={warn("breadth")} />
       </section>
 
       <section>
         <SectionHeading>Market-Relevant News</SectionHeading>
-        <SectionText text={story.sections.marketEvents} />
+        <SectionText text={story.sections.marketEvents} warnings={warn("marketEvents")} />
       </section>
 
       <section>
         <SectionHeading>Macro Context</SectionHeading>
-        <SectionText text={story.sections.macroContext} />
+        <SectionText text={story.sections.macroContext} warnings={warn("macroContext")} />
       </section>
 
       <section>
         <SectionHeading>Volatility &amp; Context</SectionHeading>
-        <SectionCard text={story.sections.volatilityContext} chart={volatilityChart} />
+        <SectionCard text={story.sections.volatilityContext} chart={volatilityChart} warnings={warn("volatilityContext")} />
       </section>
 
       <section>
         <SectionHeading>Year-to-Date</SectionHeading>
-        <SectionCard text={story.sections.closingSynthesis} chart={ytdChart} />
+        <SectionCard text={story.sections.closingSynthesis} chart={ytdChart} warnings={warn("closingSynthesis")} />
+        <StoryDisclosure />
       </section>
     </>
   );

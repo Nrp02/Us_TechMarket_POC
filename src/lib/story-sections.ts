@@ -25,7 +25,25 @@ export type StorySections = {
     text: string;
     news: { headline: string; sourceUrl: string; publishedAt: string } | null;
   };
+  checks?: StoryChecks;
 } & Record<(typeof STOCK_SECTION_KEYS)[number], string>;
+
+/**
+ * What the automated checks found in a published draft. Drafts are no longer
+ * rejected (owner, 2026-09-29): `shown` are factual problems (a figure not in
+ * the input, a wrong direction) displayed under their card; `logged` are
+ * format problems kept for inspection only. Each entry is "sectionKey: message".
+ * Absent on rows written before this existed.
+ */
+export type StoryChecks = { shown: string[]; logged: string[] };
+
+/** The shown warnings for the given cards, with their "key: " prefix removed. */
+export function warningsFor(checks: StoryChecks | undefined, ...keys: string[]): string[] {
+  return (checks?.shown ?? []).flatMap((issue) => {
+    const key = keys.find((k) => issue.startsWith(`${k}: `));
+    return key ? [issue.slice(key.length + 2)] : [];
+  });
+}
 
 export const MARKET_SECTION_KEYS = [
   "overallRead",
@@ -38,4 +56,4 @@ export const MARKET_SECTION_KEYS = [
   "closingSynthesis",
 ] as const;
 
-export type MarketStorySections = Record<(typeof MARKET_SECTION_KEYS)[number], string>;
+export type MarketStorySections = Record<(typeof MARKET_SECTION_KEYS)[number], string> & { checks?: StoryChecks };

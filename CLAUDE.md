@@ -76,6 +76,8 @@ The product answers **"what happened"** — never "what happens next". The AI mu
 
 A positive change narrated as a decline (or vice versa) counts as an invented number. When evidence doesn't explain a move, use the fixed fallback line rather than guess. Only GOOD example sentences go in prompts — a quoted BAD one gets copied.
 
+**Story drafts are published, never rejected, for a check failure (owner, 2026-09-29)** — a prototype must have content every day, and rejections were burning the Groq quota. The prompts still forbid all of the above; the code checks now *record* instead of *block*: `sections.checks.shown` (a figure not in the input, a flat/sign error, "no earnings released", market-YTD comparisons) is displayed under the card as "Automated check: …"; `sections.checks.logged` (trend wording/placement) is stored only. A figure rounded from a supplied one (−2.98% → −3%) is not a violation. Only a missing section is still retried. News blurbs keep strict batch validation.
+
 ## Verification
 
 - `npm test`, `npx tsc --noEmit`, `npm run lint` (errors in untracked `.scratch/` are pre-existing).

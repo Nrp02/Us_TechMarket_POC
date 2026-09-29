@@ -1,5 +1,5 @@
 import { generateValidatedAnalysis } from "@/lib/story-analysis-call";
-import { type AnalysisPrompt, analysisSchema, normalizeDashes, requireSections, runAllChecks, selectTopArticles, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
+import { type AnalysisPrompt, analysisSchema, normalizeDashes, collectIssues, requireSections, selectTopArticles, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
 import { MARKET_SECTION_KEYS, type MarketStorySections } from "@/lib/story-sections";
 import { readMaybeOne, readRows } from "@/lib/db-read";
 import { GroqRateLimitError } from "@/lib/groq";
@@ -289,24 +289,36 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
 export async function generateMarketStorySections(input: MarketStoryInput): Promise<MarketStorySections> {
   const prompt = buildMarketStoryPrompt(input);
   const schema = analysisSchema(MARKET_SECTION_KEYS, { descriptions: MARKET_SECTION_DESCRIPTIONS });
-  return generateValidatedAnalysis<GroqModel>({ kind: "market", day: input.day }, prompt, schema, (candidate) => {
-    requireSections(candidate, MARKET_SECTION_KEYS, "Market Story missing section(s)");
-    runAllChecks([
-      () => validatePublishedFigures(candidate, prompt.input),
-      () => validateMarketTrend(candidate, input),
-    ]);
-  });
+  // Only a missing section is rejected (retried next tick); every other check
+  // is recorded with the published story instead — see StoryChecks.
+  const data = await generateValidatedAnalysis<GroqModel>({ kind: "market", day: input.day }, prompt, schema,
+    (candidate) => requireSections(candidate, MARKET_SECTION_KEYS, "Market Story missing section(s)"));
+  const checks = {
+    shown: collectIssues([
+      () => validatePublishedFigures(data, prompt.input),
+      () => validateMarketClaims(data, input),
+    ]),
+    logged: collectIssues([() => validateMarketTrend(data, input)]),
+  };
+  return { ...data, checks };
 }
 
-export function validateMarketTrend(data: GroqModel, input: MarketStoryInput): void {
+const MACRO_NO_RELEASE = /(?:^|[.!?]\s+)(?:no|there (?:was|were) no)[^.]{0,80}(?:macro|economic|data|release)[^.]{0,45}(?:were released|was released|release occurred|release happened)/i;
+
+/** Claims the input cannot support. Shown to readers under the card. */
+export function validateMarketClaims(data: GroqModel, input: MarketStoryInput): void {
   for (const key of MARKET_SECTION_KEYS) {
     if (/\d+(?:\.\d+)?%[^.]{0,35}(?:of (?:the )?(?:exchange|whole market)|exchange coverage)/i.test(data[key])) throw new Error(`${key}: coverage is a share of the expected tracked names, not of an exchange or whole market`);
   }
+  if (!input.macro.length && MACRO_NO_RELEASE.test(data.macroContext)) {
+    throw new Error("macroContext: no stored macro snapshot does NOT mean no macro data were released. Say the retained input lacks numeric release data, not that no release happened.");
+  }
+}
+
+/** Format only: where the VIXY trend is discussed and how completely. Logged, never shown. */
+export function validateMarketTrend(data: GroqModel, input: MarketStoryInput): void {
   for (const key of MARKET_SECTION_KEYS.filter((k) => k !== "volatilityContext")) {
     if (/10[- ](?:trading[- ]|day)|confirmed reversal|net window|no[- ]clear[- ]trend|\b(?:uptrend|downtrend)\b/i.test(normalizeDashes(data[key]))) throw new Error(`${key}: remove ALL window/trend/reversal comparisons from this section; use ONLY today's VIXY move. Keep the complete trend explanation only in volatilityContext.`);
-  }
-  if (!input.macro.length && /(?:^|[.!?]\s+)(?:no|there (?:was|were) no)[^.]{0,80}(?:macro|economic|data|release)[^.]{0,45}(?:were released|was released|release occurred|release happened)/i.test(data.macroContext)) {
-    throw new Error("macroContext: no stored macro snapshot does NOT mean no macro data were released. Say the retained input lacks numeric release data, not that no release happened.");
   }
   const trend = input.indices.find((i) => i.symbol === "VIXY")?.recentTrend;
   if (!trend) return;

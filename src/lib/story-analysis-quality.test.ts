@@ -14,10 +14,20 @@ test("section descriptions reach the schema; undescribed sections stay plain", (
   assert.deepEqual(schema.properties.closingSynthesis, { type: "string", description: "Year-to-date only." });
   assert.deepEqual(schema.properties.breadth, { type: "string" });
 });
-test("accepts exact figures and rejects invented or re-rounded percentages", () => {
-  const prompt = { price: "+0.22%", peer: "+3.97%" };
+test("accepts exact and rounded figures, rejects invented percentages", () => {
+  const prompt = { price: "+0.22%", peer: "+3.97%", avg: "−2.98%" };
   validatePublishedFigures({ explanation: "Price rose 0.22% while the peer gained 3.97%." }, prompt);
-  assert.throws(() => validatePublishedFigures({ explanation: "The peer gained nearly 4%." }, prompt));
+  validatePublishedFigures({ explanation: "The peer gained nearly 4%; peers fell -3% and 3.0% on average." }, prompt);
+  assert.throws(() => validatePublishedFigures({ explanation: "The peer gained 4.2%." }, prompt));
+  assert.throws(() => validatePublishedFigures({ explanation: "Peers fell 3.2%." }, prompt));
+});
+test("hasSuppliedPercent accepts rounding but never a flipped sign", () => {
+  assert.ok(hasSuppliedPercent("net gain 7.9%", 7.866));
+  assert.ok(hasSuppliedPercent("net +8%", 7.866));
+  assert.ok(!hasSuppliedPercent("net 7.8%", 7.866));
+  assert.ok(!hasSuppliedPercent("net -7.87%", 7.866));
+  assert.ok(hasSuppliedPercent("down −0.9%", -0.9137));
+  assert.ok(!hasSuppliedPercent("0.91%", -0.9137));
 });
 test("rejects internal source IDs in published prose", () => {
   const prompt = {};

@@ -1,5 +1,5 @@
 import { generateValidatedAnalysis, stockAttemptTimes } from "@/lib/story-analysis-call";
-import { type AnalysisPrompt, analysisSchema, normalizeDashes, requireSections, runAllChecks, selectTopArticles, validateNoFlatMoves, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
+import { type AnalysisPrompt, analysisSchema, normalizeDashes, collectIssues, requireSections, selectTopArticles, validateNoFlatMoves, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
 import { STOCK_SECTION_KEYS, type StorySections } from "@/lib/story-sections";
 import { loadBusinessContext } from "@/lib/story-business-context";
 import { formatPercent, formatPrice, formatRelVolume } from "@/lib/format";
@@ -286,18 +286,22 @@ export async function generateStorySections(storyInput: StoryInput): Promise<Sto
   const picks = selectStockNews(storyInput);
   const schema = analysisSchema(STOCK_SECTION_KEYS, { headlineSources: [...new Set(picks.map(({ item }) => item.headline))] });
   const data = await generateValidatedAnalysis<GroqModel>(
-    { kind: "stock", day: storyInput.sessionDay, symbol: storyInput.symbol }, prompt, schema, (candidate) => {
-      const result = candidate as unknown as Record<string, unknown>;
-      requireSections(result, STOCK_SECTION_KEYS, "Missing analytical sections", true);
-      runAllChecks([
-        () => validatePublishedFigures(result, prompt.input),
-        () => validateStockTrend(result, storyInput),
-        () => validateNoFlatMoves(result, [
-          { names: [storyInput.symbol, NAME_BY_SYMBOL.get(storyInput.symbol) ?? storyInput.symbol], changePercent: storyInput.price.changePercent },
-          ...storyInput.peers.breakdown.map((p) => ({ names: [p.symbol], changePercent: p.changePercent })),
-        ]),
-      ]);
-    });
+    { kind: "stock", day: storyInput.sessionDay, symbol: storyInput.symbol }, prompt, schema,
+    // Only a missing section is rejected (retried next tick). Every other check
+    // is recorded with the published story instead — see StoryChecks.
+    (candidate) => requireSections(candidate as unknown as Record<string, unknown>, STOCK_SECTION_KEYS, "Missing analytical sections", true));
+  const result = data as unknown as Record<string, unknown>;
+  const checks = {
+    shown: collectIssues([
+      () => validatePublishedFigures(result, prompt.input),
+      () => validateStockClaims(result, storyInput),
+      () => validateNoFlatMoves(result, [
+        { names: [storyInput.symbol, NAME_BY_SYMBOL.get(storyInput.symbol) ?? storyInput.symbol], changePercent: storyInput.price.changePercent },
+        ...storyInput.peers.breakdown.map((p) => ({ names: [p.symbol], changePercent: p.changePercent })),
+      ]),
+    ]),
+    logged: collectIssues([() => validateStockTrend(result, storyInput)]),
+  };
   const picked = data.headline.sourceHeadline == null ? undefined
     : picks.find(({ item }) => item.headline === data.headline.sourceHeadline)?.item;
   const pickedNews = picked ? { headline: picked.headline, sourceUrl: picked.sourceUrl, publishedAt: picked.publishedAt } : null;
@@ -305,6 +309,7 @@ export async function generateStorySections(storyInput: StoryInput): Promise<Sto
   return {
     headline: { text: data.headline.text, news: pickedNews },
     ...Object.fromEntries(STOCK_SECTION_KEYS.map((key) => [key, data[key]])),
+    checks,
   } as StorySections;
 }
 
@@ -367,18 +372,23 @@ export async function generateStories(day?: string): Promise<StoryGenerationResu
   return result;
 }
 
+/** Format only: where Recent Trend is discussed and how completely. Logged, never shown. */
 export function validateStockTrend(data: Record<string, unknown>, story: StoryInput): void {
   for (const key of ["headline", ...STOCK_SECTION_KEYS.filter((k) => k !== "unusualness")]) {
     const text = normalizeDashes(key === "headline" ? (data.headline as { text?: string })?.text ?? "" : String(data[key] ?? ""));
     if (/10[- ](?:trading[- ]|day)|confirmed reversal|net window|(?:against|interrupt|continu)[^.]{0,25}\b(?:uptrend|downtrend)\b/i.test(text)) throw new Error(`${key}: Recent Trend outside unusualness`);
   }
+  validateTrendStated(String(data.unusualness ?? ""), story.recentTrend, {
+    direction: "unusualness: missing supplied trend direction/net change",
+    age: "unusualness: missing latest swing-point age",
+  });
+}
+
+/** Claims the input cannot support. Shown to readers under the card. */
+export function validateStockClaims(data: Record<string, unknown>, story: StoryInput): void {
   if (!story.fundamentals) {
     const business = String(data.fundamentals ?? "");
     if (/(?:^|[.!?]\s+)(?:no|there (?:was|were) no)[^.]{0,90}(?:earnings|results|fundamentals|figures|financials)[^.]{0,50}(?:released|reported|published|release occurred|release happened)/i.test(business)) throw new Error("fundamentals: missing snapshot does not establish that no earnings were released");
   }
   if (/annual outperformance|(?:year|YTD|annual)[^.]{0,100}(?:outperform|underperform)[^.]{0,50}market/i.test(String(data.ytdTakeaway ?? ""))) throw new Error("ytdTakeaway: market YTD comparison is not provided");
-  validateTrendStated(String(data.unusualness ?? ""), story.recentTrend, {
-    direction: "unusualness: missing supplied trend direction/net change",
-    age: "unusualness: missing latest swing-point age",
-  });
 }

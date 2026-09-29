@@ -4,8 +4,8 @@ import { test } from "node:test";
 // Both jobs import the database client, which throws at load without env vars.
 process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://story-validators-test.invalid";
 process.env.SUPABASE_SECRET_KEY ??= "test-key";
-const { buildStoryPrompt, validateStockTrend } = await import("./story-generation.ts");
-const { buildMarketStoryPrompt, validateMarketTrend } = await import("./market-story-generation.ts");
+const { buildStoryPrompt, validateStockClaims, validateStockTrend } = await import("./story-generation.ts");
+const { buildMarketStoryPrompt, validateMarketClaims, validateMarketTrend } = await import("./market-story-generation.ts");
 const { buildStoryInput } = await import("./story-input.ts");
 const { buildMarketStoryInput } = await import("./market-story-input.ts");
 
@@ -40,8 +40,9 @@ test("stock drafts: trend only in unusualness, stated in full there", () => {
 });
 
 test("stock drafts: missing data is never reported as no release, and YTD has no market comparison", () => {
-  assert.throws(() => validateStockTrend({ ...stock, fundamentals: "No earnings were released today." }, story), /does not establish/);
-  assert.throws(() => validateStockTrend({ ...stock, ytdTakeaway: "YTD it outperformed the market." }, story), /market YTD comparison/);
+  assert.doesNotThrow(() => validateStockClaims(stock, story));
+  assert.throws(() => validateStockClaims({ ...stock, fundamentals: "No earnings were released today." }, story), /does not establish/);
+  assert.throws(() => validateStockClaims({ ...stock, ytdTakeaway: "YTD it outperformed the market." }, story), /market YTD comparison/);
 });
 
 test("the stock prompt reads sector and market moves from the input it is given", () => {
@@ -67,10 +68,11 @@ const marketDraft = {
 
 test("market drafts: coverage, trend placement and missing macro", () => {
   assert.doesNotThrow(() => validateMarketTrend(marketDraft, market));
-  assert.throws(() => validateMarketTrend({ ...marketDraft, breadth: "Covering 80% of the exchange." }, market), /share of the expected tracked names/);
+  assert.doesNotThrow(() => validateMarketClaims(marketDraft, market));
+  assert.throws(() => validateMarketClaims({ ...marketDraft, breadth: "Covering 80% of the exchange." }, market), /share of the expected tracked names/);
   assert.throws(() => validateMarketTrend({ ...marketDraft, overallRead: "An uptrend day." }, market), /overallRead: remove ALL/);
   assert.throws(() => validateMarketTrend({ ...marketDraft, volatilityContext: "Calm." }, market), /missing VIXY direction/);
-  assert.throws(() => validateMarketTrend({ ...marketDraft, macroContext: "No economic data were released." }, market), /does NOT mean no macro data/);
+  assert.throws(() => validateMarketClaims({ ...marketDraft, macroContext: "No economic data were released." }, market), /does NOT mean no macro data/);
 });
 
 test("the market prompt ends with its structured input", () => {

@@ -5,10 +5,10 @@ import { isDeepStrictEqual } from "node:util";
 import { loadHistoricalStoryInputs } from "../src/lib/story-history.ts";
 import { db } from "../src/lib/supabase.ts";
 import { requireSections, validatePublishedFigures } from "../src/lib/story-analysis-quality.ts";
-import { buildStoryPrompt, validateStockTrend } from "../src/lib/story-generation.ts";
+import { buildStoryPrompt, validateStockClaims, validateStockTrend } from "../src/lib/story-generation.ts";
 import type { StoryInput } from "../src/lib/story-input.ts";
 import { MARKET_SECTION_KEYS, STOCK_SECTION_KEYS, type MarketStorySections, type StorySections } from "../src/lib/story-sections.ts";
-import { buildMarketStoryPrompt, validateMarketTrend } from "../src/lib/market-story-generation.ts";
+import { buildMarketStoryPrompt, validateMarketClaims, validateMarketTrend } from "../src/lib/market-story-generation.ts";
 import { TOP_20_SYMBOLS } from "../src/lib/symbols.ts";
 
 type HistoricalInput = Awaited<ReturnType<typeof loadHistoricalStoryInputs>>;
@@ -90,6 +90,7 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
     const input = inputs.find((d) => d.day === row.story_date)?.stocks.find((s) => s.symbol === row.symbol);
     if (!input) throw new Error(`${id}: missing captured evidence`);
     validatePublishedFigures(row.sections as unknown as Record<string, unknown>, buildStoryPrompt(input).input);
+    validateStockClaims(row.sections as unknown as Record<string, unknown>, input);
     validateStockTrend(row.sections as unknown as Record<string, unknown>, input);
     requireSections(row.sections as unknown as Record<string, unknown>, STOCK_SECTION_KEYS, `${id}: missing`, true);
     for (const key of ["headline", ...STOCK_SECTION_KEYS.filter((k) => k !== "unusualness")] as const) {
@@ -104,6 +105,7 @@ if (!process.argv.includes("--write") && !process.argv.includes("--validate")) {
     const input = inputs.find((d) => d.day === row.story_date)?.market;
     if (!input) throw new Error("Missing captured market evidence");
     validatePublishedFigures(row.sections, buildMarketStoryPrompt(input).input);
+    validateMarketClaims(row.sections, input);
     validateMarketTrend(row.sections, input);
     requireSections(row.sections, MARKET_SECTION_KEYS, `${row.story_date}: missing`);
   }

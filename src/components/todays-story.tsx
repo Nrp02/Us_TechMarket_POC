@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 
-import { SectionCard } from "@/components/section-card";
+import { CheckNotes, SectionCard, StoryDisclosure } from "@/components/section-card";
 import { SectionHeading } from "@/components/section-heading";
 import { ComparisonBars, RangeBar, YtdChart } from "@/components/story-charts";
 import { formatEtTime } from "@/lib/format";
 import { ytdSeries } from "@/lib/period-performance";
 import { computeRangePosition } from "@/lib/volatility";
 import type { Activity } from "@/lib/queries";
+import { warningsFor } from "@/lib/story-sections";
 
 // The page's centrepiece, replacing the old 3-field AI Daily Summary. Same
 // elevated surface and corner wash as the card it replaces (see
@@ -44,6 +45,7 @@ function ytdChart(dailyCloses: Activity["dailyCloses"], day: string, currentPric
 
 export function TodaysStory({ activity }: { activity: Activity }) {
   const { ticker, sector, market, peers, dailyCloses, story } = activity;
+  const warn = (...keys: string[]) => warningsFor(story?.sections.checks, ...keys);
 
   if (!story) {
     return (
@@ -99,18 +101,20 @@ export function TodaysStory({ activity }: { activity: Activity }) {
               </time>
             </p>
           )}
+          <CheckNotes warnings={warn("headline")} />
         </div>
       </section>
 
       <section>
         <SectionHeading>Company or Group Move</SectionHeading>
-        <SectionCard text={story.sections.classification} />
+        <SectionCard text={story.sections.classification} warnings={warn("classification")} />
       </section>
 
       <section>
         <SectionHeading>Unusual vs. History</SectionHeading>
         <SectionCard
           text={story.sections.unusualness}
+          warnings={warn("unusualness")}
           chart={rangeChart(dailyCloses, ticker.price)}
         />
       </section>
@@ -135,6 +139,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
             <p className="text-pretty font-serif text-base leading-relaxed text-ink">
               {story.sections.peerSectorRelation}
             </p>
+            <CheckNotes warnings={warn("comparison", "peerSectorRelation")} />
           </div>
           <div className="min-w-0">
             <ComparisonBars
@@ -149,17 +154,18 @@ export function TodaysStory({ activity }: { activity: Activity }) {
 
       <section>
         <SectionHeading>Why It Moved</SectionHeading>
-        <SectionCard text={story.sections.explanation} />
+        <SectionCard text={story.sections.explanation} warnings={warn("explanation")} />
       </section>
 
       <section>
         <SectionHeading>Business &amp; Fundamentals</SectionHeading>
-        <SectionCard text={story.sections.fundamentals} />
+        <SectionCard text={story.sections.fundamentals} warnings={warn("fundamentals")} />
       </section>
 
       <section>
         <SectionHeading>Year-to-Date</SectionHeading>
-        <SectionCard text={story.sections.ytdTakeaway} chart={ytdChart(dailyCloses, activity.sessionDay, ticker.price)} />
+        <SectionCard text={story.sections.ytdTakeaway} chart={ytdChart(dailyCloses, activity.sessionDay, ticker.price)} warnings={warn("ytdTakeaway")} />
+        <StoryDisclosure />
       </section>
     </>
   );

@@ -27,14 +27,47 @@ function StoryBody({ text, chart }: { text: string; chart?: ReactNode }) {
 }
 
 /**
+ * What the automated checks found in this card's text (StoryChecks.shown).
+ * Drafts are published rather than rejected, so a card can carry a figure the
+ * input does not contain; this line says so beside it. Renders nothing when
+ * the card passed.
+ */
+export function CheckNotes({ warnings }: { warnings: string[] }) {
+  if (!warnings.length) return null;
+  return (
+    <ul className="mt-4 flex flex-col gap-1 border-t border-hairline pt-3 text-xs text-muted">
+      {warnings.map((warning, i) => (
+        <li key={i}>Automated check: {warning}</li>
+      ))}
+    </ul>
+  );
+}
+
+/**
  * A plain, unelevated card for one analytical section — the same `.panel`
  * base the stat cards use, adapted for prose/chart content instead of a
  * single figure.
  */
-export function SectionCard({ text, chart }: { text: string; chart?: ReactNode }) {
+export function SectionCard({ text, chart, warnings = [] }: { text: string; chart?: ReactNode; warnings?: string[] }) {
   return (
     <div className="panel p-5 sm:p-6">
       <StoryBody text={text} chart={chart} />
+      <CheckNotes warnings={warnings} />
     </div>
+  );
+}
+
+/**
+ * Stated once under the last card of each AI narrative. Drafts are published
+ * without being rejected (owner, 2026-09-29), so the reader is told what the
+ * text is and that the checks flag figures rather than block them.
+ */
+export function StoryDisclosure() {
+  return (
+    <p className="mt-4 text-xs text-muted">
+      Written by AI from the data shown on this page only. This is a prototype:
+      the analysis can be wrong, and automated checks flag figures not found in
+      the source data rather than removing them.
+    </p>
   );
 }
