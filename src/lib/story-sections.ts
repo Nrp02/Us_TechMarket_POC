@@ -37,12 +37,33 @@ export type StorySections = {
  */
 export type StoryChecks = { shown: string[]; logged: string[] };
 
-/** The shown warnings for the given cards, with their "key: " prefix removed. */
+/** The shown warnings for the given cards, reworded for readers. */
 export function warningsFor(checks: StoryChecks | undefined, ...keys: string[]): string[] {
   return (checks?.shown ?? []).flatMap((issue) => {
     const key = keys.find((k) => issue.startsWith(`${k}: `));
-    return key ? [issue.slice(key.length + 2)] : [];
+    return key ? [readableCheck(issue.slice(key.length + 2))] : [];
   });
+}
+
+// The stored messages were written as feedback to the model; readers get these.
+// Matched at render time, so rows already stored are reworded too. An
+// unrecognised message falls through unchanged rather than disappearing.
+const READABLE: [RegExp, (m: RegExpMatchArray) => string][] = [
+  [/^percentage (\S+) is not supplied/, (m) => `${m[1]} does not appear in the source data.`],
+  [/^(\S+) moved (\S+%), so it is not flat/, (m) => `${m[1]} moved ${m[2]}; it was not flat.`],
+  [/no earnings were released/, () => "No earnings data was available; that does not mean none were released."],
+  [/market YTD comparison/, () => "No market year-to-date figure was provided for this comparison."],
+  [/coverage is a share of the expected tracked names/, () => "Coverage refers to the tracked stocks, not the whole market."],
+  [/no macro data were released/, () => "No macro data was stored; that does not mean none was released."],
+  [/internal evidence ID/, () => "An internal source label appeared in the text."],
+];
+
+export function readableCheck(message: string): string {
+  for (const [pattern, reword] of READABLE) {
+    const match = message.match(pattern);
+    if (match) return reword(match);
+  }
+  return message;
 }
 
 export const MARKET_SECTION_KEYS = [
