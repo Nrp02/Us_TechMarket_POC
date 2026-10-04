@@ -128,16 +128,21 @@ export function RankedBars({
   const diverging = rows.some((r) => r.value > 0) && rows.some((r) => r.value < 0);
 
   return (
-    <div className="flex flex-col gap-2.5" role="img" aria-label={ariaLabel}>
+    // One grid, so the label column is as wide as the longest label: a fixed
+    // 96px cut "Hardware/Devices" and "AI/Data Analytics" to an ellipsis at
+    // every width, and a ticker row does not need the room.
+    <div
+      className="grid grid-cols-[max-content_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2.5 text-xs"
+      role="img"
+      aria-label={ariaLabel}
+    >
       {rows.map((row) => {
         const t = tone(row.value);
         const magnitudePercent = (Math.abs(row.value) / maxAbs) * 100;
         return (
-          <div key={row.label} className="flex items-center gap-2 text-xs">
-            <span className="w-24 shrink-0 truncate text-muted" title={row.label}>
-              {row.label}
-            </span>
-            <div className="relative h-2.5 flex-1 rounded-full well">
+          <div key={row.label} className="contents">
+            <span className="text-muted">{row.label}</span>
+            <div className="relative h-2.5 rounded-full well">
               {diverging && (
                 <span
                   aria-hidden
@@ -242,7 +247,9 @@ export function YtdChart({
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="h-auto w-full"
+      // The closing point sits on the right edge; clipped, it showed as half
+      // a dot. Sparkline draws its end point the same way.
+      className="h-auto w-full overflow-visible"
       role="img"
       aria-label={`Year-to-date daily close, ${up ? "trending up" : "trending down"} overall, from ${formatPrice(
         values[0],

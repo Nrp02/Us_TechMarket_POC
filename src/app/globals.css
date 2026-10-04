@@ -144,6 +144,32 @@
      sitting in it. */
   --color-weather: #1a4fc4;
 
+  /* Saturn, and nothing else (`saturn-scene.tsx`). The one warm material in
+     the product, and it never reaches a surface: no pane, tint or text takes
+     these. They are the planet as it is lit — warm cream, gold, tan and grey
+     on the body, ivory and grey-silver in the rings — and so far brighter
+     than the sky The Worst-Case Composite Rule above was measured over.
+
+     What keeps text legible over it is --saturn-glass: the share of this
+     brightness the planet is drawn at under any line of text, figure, chart
+     or control (`saturn-webgl.ts`), and everywhere when only the drawn
+     fallback is showing. Behind the rest of a pane it is drawn at
+     --saturn-pane (see "Saturn" below).
+     Lightening a colour here, or raising either share, needs the contrast
+     re-measured over the rendered planet. */
+  --saturn-cream: #e4cc9c;
+  --saturn-gold: #cfa562;
+  --saturn-tan: #a17c4c;
+  --saturn-grey: #8b8274;
+  --saturn-shadow: #030406;
+  --saturn-ring: #ded7c8;
+  --saturn-ring-cool: #9d9b97;
+  --saturn-glow: #f0dfb4;
+  --saturn-glass: 0.26;
+  /* The same, for what is read on the open field rather than on a pane:
+     there is no glass to take the planet down further, so it is deeper. */
+  --saturn-bare: 0.18;
+
   /* The intraday volume bars, and nothing else. Separate from surface-strong
      because these bars ARE data and so answer to the 3:1 floor for graphical
      objects, where a decorative surface does not. Turned blue with the rest of
@@ -229,9 +255,27 @@
      one with a full page-height of sky moving behind it. It still resolves
      DARKER than --glass-panel, which is what §10 actually asks for — stable
      and recessive relative to the content, not opaque. */
-  --glass-rail: rgb(7 17 40 / 0.34);
-  --glass-panel: rgb(15 30 60 / 0.34);
+  /* Three weights of glass for three jobs (2026-10-04). The rail, the shell,
+     is the lightest pane in the product: a thin sheet floating over the sky
+     on its shadow. The panes that hold the session's figures and charts are
+     the densest, so the planet and the stars behind them settle into a
+     quieter ground. Secondary panes — the story sections, the news teaser,
+     the events, the timeline, notes — are `pane-quiet`, nearly clear and
+     unwashed, so the eye finds the data first. All three composite darker
+     than --color-canvas over the brightest cloud, so every pair measured
+     against it still holds; over the planet, text is held by the shade in
+     `saturn-webgl.ts`, not by the glass. */
+  --glass-rail: rgb(7 17 40 / 0.22);
+  --glass-panel: rgb(15 30 60 / 0.42);
+  --glass-quiet: rgb(12 24 50 / 0.2);
   --glass-raised: rgb(24 43 78 / 0.34);
+  /* Under the glass, not in it: a layer of the sky's own black beneath each
+     reading pane's tint (2026-10-04). Over black sky it changes nothing, so a
+     pane's tone is what it was; over a star it takes 45% off, so the dust and
+     dim tiers that showed through the text as specks read as a quieter field.
+     The sky outside the panes keeps every star. The planet behind a pane is
+     dimmed by the same share, and --saturn-pane is raised to give that back. */
+  --pane-veil: rgb(1 4 12 / 0.45);
   /* The floating tier, and the one that answers to a different constraint: it
      covers page content rather than sky, so what shows through it is text, and
      text through glass is unreadable in a way weather never is. It came down
@@ -352,8 +396,53 @@
      rather than 1.3s. That is the trade that was chosen: nothing is faster,
      nothing is gone, less happens at any one instant. Note the durations
      below are untouched; only delays moved. */
-  --enter-instruments: 800ms;
+  /* Since 2026-10-04 the arrival is card by card (see "The page arriving"),
+     so this is measured from the card an instrument sits in, not from the
+     page: a sparkline draws as its own card settles, wherever that card
+     falls in the order. 280ms is where the card's rise is about 90% done. */
+  --enter-instruments: 280ms;
 
+  /* The arrival's rhythm: one beat between cards, how long each takes to
+     settle, how far it travels. Shorter and closer on a phone, below. */
+  --enter-step: 110ms;
+  --enter-duration: 560ms;
+  /* An even deceleration rather than the expo-out the cards had: that was
+     85% of the way in the first third of its time, so a card was "there"
+     about 150ms after it started and the order between cards was lost. */
+  --enter-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --enter-travel: 18px;
+
+  /* The page's own line before the cards (see "The page's line"): the
+     heading rises at 0, the lede's words follow from --lede-at, the one
+     figure the page leads with lands from --figure-at, and the first card
+     waits --enter-lead so the three read in that order. */
+  /* Long enough that the heading, the lede and the figure are seen as their
+     own beat before the first card: at 200ms the first card was already
+     most of the way up at 400ms, and the page read as arriving at once. */
+  --enter-lead: 340ms;
+  /* Slower than the cards on purpose, and on an even curve: on the cards'
+     expo-out the heading was 90% up by 200ms and nobody saw it move. The
+     words wait for the heading to be mostly up, then come a readable beat
+     apart. Neither delays a figure or a card. */
+  --line-duration: 900ms;
+  --lede-at: 240ms;
+  --word-step: 50ms;
+  --word-duration: 520ms;
+  --figure-at: 300ms;
+  --figure-duration: 680ms;
+
+  /* The camera between two routes' views: the planet's move and the star
+     depths travelling with it (`saturn-stage.tsx`). Even at both ends, so
+     it reads as a camera that starts and stops rather than as the planet
+     being thrown: the previous curve did 60% of the move in its first
+     150ms, which looked like the planet jumping to its new place. 1s lands
+     it with the last card. */
+  --camera-duration: 1000ms;
+  --camera-ease: cubic-bezier(0.45, 0.05, 0.2, 1);
+
+  /* A secondary pane's cast (`pane-quiet`): a seam and a short shadow, so it
+     sits nearer the sky than the panes holding figures. */
+  --elev-0: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.4);
   --elev-1: 0 1px 2px rgb(0 0 0 / 0.45), 0 4px 14px -3px rgb(0 0 0 / 0.5);
   --elev-2: 0 2px 6px rgb(0 0 0 / 0.5), 0 16px 34px -10px rgb(0 0 0 / 0.6);
   --elev-3: 0 6px 12px rgb(0 0 0 / 0.55), 0 30px 60px -14px rgb(0 0 0 / 0.7);
@@ -593,21 +682,24 @@
 
    Two details that will break it if changed carelessly. The pseudo-element's
    radius is the tier's radius PLUS ONE, because it sits a pixel outside; using
-   `inherit` leaves a visible notch at each corner. And `panel-overlay` is
-   excluded on purpose — it is applied to elements that are themselves
-   `absolute`, and giving the utility `position: relative` would fight the
-   layout depending on which rule the cascade happened to order last. It is
-   nearly opaque anyway, so it wants a plain border rather than a lit edge. */
+   `inherit` leaves a visible notch at each corner. And `panel-overlay` takes
+   no `position: relative` of its own — it is applied to elements that are
+   themselves `absolute`, which already anchor the rim, and a second position
+   would fight the layout depending on which rule the cascade ordered last. */
 
 @utility panel {
   position: relative;
-  background-color: var(--glass-panel);
-  background-image: var(--surface-face);
+  /* The veil is the background colour, so it paints beneath the tint, which
+     is a layer above it (see --pane-veil). */
+  background-color: var(--pane-veil);
+  background-image:
+    var(--pane-face, var(--surface-face)),
+    linear-gradient(var(--pane-fill, var(--glass-panel)) 0 0);
   -webkit-backdrop-filter: blur(var(--blur-panel)) saturate(1.35);
   backdrop-filter: blur(var(--blur-panel)) saturate(1.35);
   border: 1px solid var(--color-glass-edge);
   border-radius: 24px;
-  box-shadow: var(--elev-1);
+  box-shadow: var(--pane-cast, var(--elev-1));
 
   --rim-radius: calc(24px - 1px);
 }
@@ -617,8 +709,8 @@
    climbs the ramp without letting more of the sky through. */
 @utility panel-raised {
   position: relative;
-  background-color: var(--glass-raised);
-  background-image: var(--surface-face);
+  background-color: var(--pane-veil);
+  background-image: var(--surface-face), linear-gradient(var(--glass-raised) 0 0);
   -webkit-backdrop-filter: blur(var(--blur-raised)) saturate(1.35);
   backdrop-filter: blur(var(--blur-raised)) saturate(1.35);
   border: 1px solid var(--color-glass-edge);
@@ -629,13 +721,34 @@
   --rim: var(--edge-rim-lit);
 }
 
+/* A secondary pane: the same `panel`, quieter. Applied beside it
+   (`panel pane-quiet`), never alone. It sets the panel's own variables rather
+   than its properties, so which of two utilities the stylesheet happens to
+   order last cannot decide the result, and every fallback that repaints
+   `.panel` solid repaints this too. Nearly clear, no face wash, the shell's
+   quiet rim and a shallower cast: what is in it is read after the figures. */
+@utility pane-quiet {
+  --pane-fill: var(--glass-quiet);
+  --pane-face: none;
+  --pane-cast: var(--elev-0);
+  --rim: var(--edge-rim-quiet);
+}
+
 /* Floats over the page and must detach from it completely, so it is nearly
-   opaque and takes the heaviest blur. It takes a plain border rather than the
-   lit rim — see the note above for why the pseudo-element cannot be used on a
-   tier that is positioned by its own consumers. */
+   opaque and takes the heaviest blur. It was the one glass tier with a plain
+   border and no lit rim, so the menus read as flat cut-outs laid over panes
+   that had thickness. It now takes the brightest rim, because it is the
+   nearest plane. Consumers must position it (both are `absolute`; see the
+   note above) and must scroll an inner element, not this one, or the rim
+   scrolls away with the rows. --catch is pinned to 0: the planet stops
+   drawing while a menu is open (saturn-webgl.ts), so a catch inherited from
+   an ancestor pane would sit still in the wrong place. */
 @utility panel-overlay {
+  --rim-radius: calc(16px - 1px);
+  --rim: var(--edge-rim-lit);
+  --catch: 0;
   transform-origin: var(--overlay-origin, top left);
-  animation: overlay-settle 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: overlay-settle 200ms cubic-bezier(0.16, 1, 0.3, 1);
   background-color: var(--glass-overlay);
   background-image: var(--surface-face);
   -webkit-backdrop-filter: blur(var(--blur-overlay)) saturate(1.35);
@@ -700,8 +813,8 @@
    geometry and the face wash that comes with having a top edge to catch. */
 @utility panel-rail {
   position: relative;
-  background-color: var(--glass-rail);
-  background-image: var(--surface-face);
+  background-color: var(--pane-veil);
+  background-image: var(--surface-face), linear-gradient(var(--glass-rail) 0 0);
   -webkit-backdrop-filter: blur(var(--blur-rail)) saturate(1.35);
   backdrop-filter: blur(var(--blur-rail)) saturate(1.35);
   border: 1px solid var(--color-glass-edge);
@@ -801,6 +914,40 @@
 }
 
 
+/* The planet's light on the glass (see the rim below). Registered so a touch
+   device can ease it into place after a scroll instead of jumping; inherited
+   so the rim, a pseudo-element, sees what is written on its pane. The
+   initial values put the light nowhere. */
+@property --catch {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --catch-x {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: -9999px;
+}
+
+@property --catch-y {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: -9999px;
+}
+
+@property --catch-d {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --catch-r {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}
+
 /* The lit rim itself, written once. It was inlined in all five glass tiers —
    the same eighteen lines of mask plumbing, five times over, differing only in
    a radius. That is precisely the state the panel material was in before it
@@ -816,7 +963,8 @@
 .panel-track::before,
 .panel-track-block::before,
 .panel-rail::before,
-.panel-control::before {
+.panel-control::before,
+.panel-overlay::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -824,8 +972,23 @@
   border-radius: var(--rim-radius);
   padding: 1px;
   /* Each tier may name its own strength through --rim; the plain panel takes
-     the base one. See the three --edge-rim tokens for what each plane gets. */
-  background: var(--rim, var(--edge-rim));
+     the base one. See the three --edge-rim tokens for what each plane gets.
+
+     Over it, the planet's light: a warm catch on the stretch of edge that
+     faces Saturn, full where the edge is nearest the planet and gone a
+     planet's radius further along. `saturn-stage.tsx` writes where the
+     planet's centre is relative to this pane (--catch-x/-y), how far the
+     nearest edge is (--catch-d), how far the light carries along it
+     (--catch-r) and how strong it is (--catch, 0 out of the planet's reach).
+     Only panes near the planet catch it, so no two cards are lit alike, and
+     it is on the rim only: a 1px edge, never under a glyph. */
+  background:
+    radial-gradient(
+      circle var(--catch-r, 1px) at var(--catch-x, -9999px) var(--catch-y, -9999px),
+      rgb(240 223 180 / calc(var(--catch, 0) * 0.7)) var(--catch-d, 0px),
+      rgb(240 223 180 / 0)
+    ),
+    var(--rim, var(--edge-rim));
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -835,6 +998,22 @@
     linear-gradient(#000 0 0);
   mask-composite: exclude;
   pointer-events: none;
+}
+
+/* The planet's light comes up slowly where it lands, and goes out quickly
+   while the page moves: a scroll or a route change (`saturn-stage.tsx` sets
+   `data-scrolling` or `data-traveling` on the root and places the light again
+   once the page is at rest). A rim's own
+   value wins over the one it inherits from its pane, so this puts every
+   light out at once without touching the panes. */
+:is(.panel, .panel-raised, .panel-track, .panel-track-block, .panel-rail, .panel-control)::before {
+  transition: --catch 500ms ease-out;
+}
+
+html:is([data-scrolling], [data-traveling])
+  :is(.panel, .panel-raised, .panel-track, .panel-track-block, .panel-rail, .panel-control)::before {
+  --catch: 0;
+  transition-duration: 180ms;
 }
 
 /* --- Clear glass, not frosted -------------------------------------------
@@ -1053,13 +1232,15 @@
 
 /* --- Depth: the sky sways -------------------------------------------------
    The sky is a stack of layers (see `night-sky.tsx`), and three of them move:
-   far (the far clouds and the dust), mid (the dim stars) and near (the bright
+   far (the far field and the dust), mid (the dim stars) and near (the bright
    stars). They share ONE period and ONE curve and differ only in distance —
-   3, 6 and 12px — so what the eye reads is a single slow camera drifting past
+   4, 9 and 18px — so what the eye reads is a single slow camera drifting past
    a field with depth in it, the near stars sliding against the far ones. At
-   45s a leg the near layer travels about 0.27px a second: well under what
-   registers as motion at any moment, yet the parallax between the three is
-   there to be felt over a minute of reading.
+   40s a leg the near layer peaks at about 0.7px a second: not something that
+   pulls the eye off a figure, but visible as the stars slipping past one
+   another when the eye rests on open sky for a few seconds. At the 3-12px it
+   used to travel it could not be seen at all. The near layer's 18px stays
+   inside the 24-unit margin the bright stars keep from every pane.
 
    Ambient, and deliberately independent of the visitor. Nothing the pointer
    does starts, speeds, slows or stops it; the pointer glow and the
@@ -1082,11 +1263,13 @@
    - an open overlay menu, the one surface that still frosts: moving weather
      behind it would re-run its blur every frame. A UI state, not a response
      to the sky;
-   - touch hardware, for the reason the twinkle used to stop there — an A14 GPU
-     is the device class this sky has already been caught being too expensive
+   - a phone, for the reason the twinkle used to stop there — an A14 GPU is
+     the device class this sky has already been caught being too expensive
      on, and it cannot be profiled from here. The known cause (twinkle inside
      the cached SVG) is gone, so this is caution rather than a measured
-     failure; lift it after checking an iPad;
+     failure. An iPad sways: three layer transforms are compositor work, and
+     the planet's scene is where depth is wanted. Still to be watched on an
+     A14 iPad;
    - reduced motion (below). */
 @keyframes sky-sway {
   to {
@@ -1102,22 +1285,22 @@
 .depth-far,
 .depth-mid,
 .depth-near {
-  animation: sky-sway 45s ease-in-out infinite alternate;
+  animation: sky-sway 40s ease-in-out infinite alternate;
 }
 
 .depth-far {
-  --sway-x: -3px;
-  --sway-y: 1px;
+  --sway-x: -4px;
+  --sway-y: 1.5px;
 }
 
 .depth-mid {
-  --sway-x: -6px;
-  --sway-y: 2px;
+  --sway-x: -9px;
+  --sway-y: 3px;
 }
 
 .depth-near {
-  --sway-x: -12px;
-  --sway-y: 4px;
+  --sway-x: -18px;
+  --sway-y: 6px;
 }
 
 /* `xMidYMid slice` in CSS, for the one star layer drawn in HTML: a 16:10 box
@@ -1147,7 +1330,7 @@ html:has(.panel-overlay) :is(.depth-far, .depth-mid, .depth-near, .star-breathe)
   animation-play-state: paused;
 }
 
-@media (hover: none) {
+@media (hover: none) and ((max-width: 699.98px) or (max-height: 499.98px)) {
   .depth-far,
   .depth-mid,
   .depth-near {
@@ -1173,6 +1356,307 @@ html:has(.panel-overlay) :is(.depth-far, .depth-mid, .depth-near, .star-breathe)
   pointer-events: none;
 }
 
+/* --- Saturn ---------------------------------------------------------------
+   The planet in `saturn-scene.tsx`: fixed, at the sky's depth, painted after
+   the sky and the pointer canvas, before the meteors (which burn up in front
+   of it), and behind every pane. Sized
+   like `night-sky`, pinned to 100lvh for the same iOS reason, and clipped —
+   the planet is cropped by the frame on purpose, and without the clip that
+   overhang would be scrollable width.
+
+   Four nested boxes, one job each, so no two motions share a transform:
+
+     saturn-view      where the camera is for this route
+     saturn-drift     the slow ambient roll of the drawn fallback
+     canvas / svg     the render, or the drawing when the render cannot run
+
+   THE VIEWS. Each route is composed on its own, per device class, against
+   the measured rectangles of that route's panes, figures and charts at
+   scroll 0: the planet may sit behind a pane's edge, a caption or a heading,
+   never behind a figure, a sparkline or a chart. --saturn-x / --saturn-y are
+   the planet's centre in the viewport (y in px, because the rows it is placed
+   between are in px), --saturn-scale the pull-back from the full box, and
+   --saturn-tilt / --saturn-roll the ring plane's opening and the planet's
+   roll in degrees, read by the render and by the drawing alike. The body's
+   radius is 21% of the box: --saturn-size × --saturn-scale × 0.21.
+
+   The change between views is the route transition, and it is deliberately
+   not a new one: the same pathname that re-keys the meteors swaps
+   `data-view`, and the camera travels (--camera-*) while they cross, the
+   star depths travelling with it by their share (`saturn-stage.tsx`).
+
+   THE RENDER. `saturn-webgl.ts` draws into a canvas laid exactly over the
+   box and marks the scene `data-three="on"` once its first frame is up; the
+   canvas fades in then. Until that frame there is no planet. Where the render
+   cannot run, `data-three="off"` shows the drawn planet instead, with its
+   slow drift.
+
+   BRIGHTNESS. The render is told where the panes and everything read are,
+   and is drawn at --saturn-pane of its brightness behind a pane and at
+   --saturn-glass under text, figures, charts and controls, so on every route
+   the planet is a background seen through the glass and only what is read
+   gets the dark ground it was measured on. The drawing cannot know where
+   the text is, so it is drawn at --saturn-glass throughout.
+
+   PHONES have no planet. Under 700px wide the content is one full-width
+   column, and a phone on its side is under 500px tall: either way there is
+   no open sky for it to be seen in. The scene is removed and
+   `saturn-stage.tsx` never loads the render. An iPad is over both. */
+.saturn-scene {
+  --saturn-size: clamp(900px, 104vw, 1560px);
+  --saturn-scale: 1;
+  --saturn-opacity: 1;
+  /* Was 0.6, before --pane-veil took 45% off whatever is behind a pane; at
+     1 the planet carries through at 0.55, where it was. */
+  --saturn-pane: 1;
+
+  /* Market. Every row of this page runs the full width of the column, so
+     there is no open sky to stand the planet in without pushing the data
+     down — and the page keeps its order and density. So here the planet is
+     the background: full size, behind the digest and the cards, cut by the
+     right edge by a sixth of its width so the crop reads as chosen, clear of
+     the top edge. --saturn-pane lets it carry through the glass at more of
+     its brightness; only the ground under each line of text, figure and
+     sparkline is taken down to --saturn-glass (see `saturn-webgl.ts`). */
+  --saturn-x: 84vw;
+  --saturn-y: 390px;
+  --saturn-tilt: 13;
+  --saturn-roll: -10;
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint;
+}
+
+/* Stocks, four cards across: the body cut by the right edge, behind the
+   last column of stat cards and the events, the rings running left behind
+   the cards and through the empty cell that ends them. */
+.saturn-scene[data-view="stocks"] {
+  --saturn-scale: 0.85;
+  --saturn-x: 96vw;
+  --saturn-y: 400px;
+  --saturn-tilt: 10;
+  --saturn-roll: 14;
+}
+
+/* News: the whole planet, rings and all, behind the header and the top of
+   the list, right of the title. Low enough that the top edge of the frame
+   does not graze it: hung from that edge, it read as a body that had slipped
+   out of the picture. Far enough right that its lit limb clears the end of
+   the sector pills: text on the open field takes the deepest shade, and on
+   the limb that shade read as a dark box cut into the planet. */
+.saturn-scene[data-view="news"] {
+  --saturn-scale: 0.75;
+  --saturn-x: 74vw;
+  --saturn-y: 270px;
+  --saturn-tilt: 14;
+  --saturn-roll: -12;
+  /* Behind the list and the filters only: there it was the brightest thing
+     under the headlines. The planet on the open field, where it is the
+     page's picture, keeps its full light and size. */
+  --saturn-pane: 0.7;
+}
+
+/* An iPad on its side: three cards across, so the rows are elsewhere. */
+@media (max-width: 1279.98px) {
+  /* Market keeps the desktop's composition: the planet as background,
+     behind the digest and the cards, cut by the right edge. */
+  /* The box is fixed in px from here down, so a placement measured at one
+     tablet width holds at the others: the rows the planet is placed between
+     do not scale with the width, and the planet should not either. */
+  .saturn-scene {
+    --saturn-size: 1227px;
+    --saturn-scale: 0.82;
+    --saturn-x: 88vw;
+    --saturn-y: 420px;
+  }
+
+  /* Stocks and News at the same weight as Market, each composed the way
+     the desktop is. */
+  .saturn-scene[data-view="stocks"] {
+    --saturn-scale: 0.82;
+    --saturn-x: 96vw;
+    --saturn-y: 560px;
+    --saturn-tilt: 10;
+    --saturn-roll: 6;
+  }
+
+  .saturn-scene[data-view="news"] {
+    --saturn-scale: 0.78;
+    --saturn-x: 68vw;
+    --saturn-y: 300px;
+  }
+}
+
+/* An upright iPad: the same three compositions, at the same weight. */
+@media (orientation: portrait) {
+  .saturn-scene {
+    --saturn-size: 1230px;
+  }
+
+  /* Market, the same composition upright. */
+  .saturn-scene[data-view="market"] {
+    --saturn-scale: 0.8;
+    --saturn-x: 82vw;
+    --saturn-y: 520px;
+    --saturn-tilt: 13;
+    --saturn-roll: -10;
+  }
+
+  .saturn-scene[data-view="stocks"] {
+    --saturn-scale: 0.8;
+    --saturn-x: 94vw;
+    --saturn-y: 640px;
+    --saturn-tilt: 10;
+    --saturn-roll: 6;
+  }
+
+  .saturn-scene[data-view="news"] {
+    --saturn-scale: 0.8;
+    --saturn-x: 66vw;
+    --saturn-y: 330px;
+    --saturn-tilt: 14;
+    --saturn-roll: -10;
+  }
+}
+
+@media (max-width: 699.98px), (max-height: 499.98px) {
+  .saturn-scene {
+    display: none;
+  }
+}
+
+.saturn-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--saturn-size);
+  aspect-ratio: 1;
+  transform-origin: 50% 50%;
+  transform: translate3d(
+      calc(var(--saturn-x) - var(--saturn-size) / 2),
+      calc(var(--saturn-y) - var(--saturn-size) / 2),
+      0
+    )
+    scale(var(--saturn-scale));
+  transition: transform var(--camera-duration) var(--camera-ease);
+}
+
+/* This route's placement, resolved to px for the camera's arithmetic. */
+.saturn-probe {
+  position: absolute;
+  width: var(--saturn-x);
+  height: var(--saturn-y);
+  visibility: hidden;
+}
+
+/* Light and dust around the planet, and nowhere else: a warm scatter off the
+   lit limb and a faint lane of dust in the ring plane, reaching past the
+   rings. One element under the render, inside the box that carries the
+   planet, so it goes where the planet goes and turns with its roll. Broken
+   up by a fractal mask so it reads as dust rather than as a vignette. It
+   does not animate, and it is rasterised once. */
+.saturn-view::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  transform: rotate(calc(var(--saturn-roll) * -1deg));
+  background:
+    radial-gradient(
+      ellipse 47% 7.5% at 50% 50%,
+      color-mix(in srgb, var(--saturn-ring) 22%, transparent),
+      color-mix(in srgb, var(--saturn-ring) 9%, transparent) 55%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 24% 24% at 45% 46%,
+      color-mix(in srgb, var(--saturn-glow) 14%, transparent),
+      color-mix(in srgb, var(--saturn-glow) 5%, transparent) 60%,
+      transparent 100%
+    );
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='700'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.012' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 2.4 0 0 0 -0.55'/%3E%3C/filter%3E%3Crect width='700' height='700' filter='url(%23n)'/%3E%3C/svg%3E");
+  mask-size: 700px 700px;
+}
+
+.saturn-drift {
+  width: 100%;
+  height: 100%;
+}
+
+.saturn-drift {
+  position: relative;
+}
+
+.saturn-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 700ms ease-out;
+}
+
+.saturn-scene[data-three="on"] .saturn-canvas {
+  opacity: 1;
+}
+
+.saturn-scene svg {
+  visibility: hidden;
+}
+
+.saturn-scene[data-three="off"] svg {
+  visibility: visible;
+}
+
+/* The drawing's ring plane and bands take the route's tilt and roll, the
+   same numbers the render reads. The fixed scale before the trigonometric
+   one is for engines without CSS sin(). */
+.saturn-ring-plane,
+.saturn-roll {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.saturn-ring-plane {
+  transform: rotate(calc(var(--saturn-roll) * -1deg)) scale(1, 0.19);
+  transform: rotate(calc(var(--saturn-roll) * -1deg)) scale(1, sin(calc(var(--saturn-tilt) * 1deg)));
+}
+
+.saturn-roll {
+  transform: rotate(calc(var(--saturn-roll) * -1deg));
+}
+
+@keyframes saturn-drift {
+  to {
+    transform: translate3d(-10px, 6px, 0) rotate(-1.25deg);
+  }
+}
+
+.saturn-scene[data-three="off"] .saturn-drift {
+  animation: saturn-drift 48s ease-in-out infinite alternate;
+}
+
+.saturn-art {
+  opacity: calc(var(--saturn-opacity) * var(--saturn-glass));
+}
+
+html:has(.panel-overlay) .saturn-drift {
+  animation-play-state: paused;
+}
+
+@media (hover: none) {
+  .saturn-drift {
+    animation: none !important;
+  }
+}
+
 /* --- The editorial voice -------------------------------------------------
    The one h1 per page, set in the serif. Composed once rather than repeated as
    `font-serif text-display font-semibold tracking-…` across four files, for the
@@ -1187,30 +1671,18 @@ html:has(.panel-overlay) :is(.depth-far, .depth-mid, .depth-near, .star-breathe)
    symbol. A ticker is an identifier the machine measured, not a phrase somebody
    wrote, so it stays in Inter. See The Written-And-Measured Rule. */
 @utility page-title {
-  -webkit-mask-image: linear-gradient(
-    95deg,
-    #000 0 45%,
-    rgb(0 0 0 / 0.25) 60%,
-    transparent 72%
-  );
-  mask-image: linear-gradient(
-    95deg,
-    #000 0 45%,
-    rgb(0 0 0 / 0.25) 60%,
-    transparent 72%
-  );
-  -webkit-mask-size: 280% 100%;
-  mask-size: 280% 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: 0% 0;
-  mask-position: 0% 0;
-  animation: title-sweep 900ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
   font-family: var(--font-serif);
   font-size: var(--text-display);
   font-weight: 600;
   line-height: 1.06;
   letter-spacing: -0.012em;
+}
+
+/* The sky is `position: fixed`, so it does not move with the document. Past the
+   last row, iOS rubber-bands the document and what shows below it is the bare
+   canvas, not the sky — a flat black band. No bounce, no band. */
+html {
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -1354,7 +1826,18 @@ a {
     background-color: var(--solid-panel);
   }
 
-  .panel-control:hover {
+  /* The solid face replaces the veil, so the tint layer above it goes too. */
+  .panel {
+    background-image: var(--pane-face, var(--surface-face));
+  }
+
+  .panel-raised,
+  .panel-rail {
+    background-image: var(--surface-face);
+  }
+
+  .panel-control:hover,
+  .panel-control[aria-expanded="true"] {
     background-color: var(--solid-raised);
   }
 
@@ -1410,7 +1893,8 @@ a {
   .panel-track-block::before,
   .panel-raised::before,
   .panel-rail::before,
-  .panel-control::before {
+  .panel-control::before,
+  .panel-overlay::before {
     display: none;
   }
 
@@ -1432,6 +1916,15 @@ a {
 
   .panel-rail {
     background-color: var(--solid-rail);
+  }
+
+  .panel {
+    background-image: var(--pane-face, var(--surface-face));
+  }
+
+  .panel-raised,
+  .panel-rail {
+    background-image: var(--surface-face);
   }
 
   :root {
@@ -1471,28 +1964,366 @@ a {
    panel — was rendered through a filter for six hundred milliseconds. The
    authored focus now belongs to the type itself, one character at a time, and
    the block it sits in simply arrives like every other. */
-@keyframes page-section-in {
+/* Card by card since 2026-10-04, and visible. Everything above moved whole
+   sections, so a row of six cards travelled as one slab, and from 0.4
+   opacity over 10px nobody could see it happen. The page now arrives in
+   reading order, one beat (--enter-step) apart:
+
+     0     the page's own line: Market's date and digest, the Stocks header
+           (ticker, price and change together), the News title and filters;
+     1-3   the first cards a visitor reads, one at a time, once the line
+           has had --enter-lead to itself (see "The page's line");
+     4     every remaining card of that first group, together;
+     rest  everything further down: any part of the page carrying no mark
+           fades in on beat 4 and does not travel. It is mostly below the
+           screen, and nothing waits for a scroll to reveal it.
+
+   A component marks its first cards with `data-enter`; the `page-enter`
+   root fades the rest and names the arrival for `page-entrance.tsx`. Each card rises
+   from fully clear, which is what makes the order legible. That is safe
+   now, where it was not when it was a blink: a route change arrives as one
+   entrance (the old page goes, the new one arrives), and when a skeleton
+   comes first, the page takes the skeleton's place in the same arrival
+   rather than starting again (`page-entrance.tsx`). The last card lands by
+   about 1s; its text is readable well before, at the curve's shoulder. */
+@keyframes enter-rise {
   from {
-    opacity: 0;
-    transform: translateY(14px);
+    opacity: var(--enter-from, 0);
+    transform: translateY(var(--enter-travel));
   }
 }
 
-@utility page-enter {
-  & > * {
-    animation: page-section-in 700ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+@keyframes enter-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+[data-enter],
+.page-enter > :not([data-enter], :has([data-enter])) {
+  --enter-at: calc(var(--enter-lead-in, 0ms) + var(--enter-step) * var(--enter-beat, 0));
+  animation: enter-rise var(--enter-duration) var(--enter-ease) var(--enter-at) backwards;
+}
+
+/* The page's line starts partly there. The old page has gone by the frame
+   it starts on, and a heading rising from clear left a frame or two of bare
+   sky between the two pages; at 0.45 the line is legible from the first
+   frame and still visibly settles. The cards keep rising from clear: they
+   arrive after it, so the screen is never empty while they wait.
+
+   A line that is not a pane (the Stocks and News headers, Market's date)
+   does not travel: what is in it moves instead — its heading, its lede, its
+   figure (below) — and the block moving under them would be the same
+   motion twice. The logo, the picker and the badge are simply there. */
+[data-enter="0"] {
+  --enter-from: 0.45;
+}
+
+[data-enter="0"]:not(.panel) {
+  --enter-travel: 0px;
+}
+
+/* Every card waits for the line: --enter-lead before the first beat. */
+[data-enter="1"],
+[data-enter="2"],
+[data-enter="3"],
+[data-enter="4"],
+.page-enter > :not([data-enter], :has([data-enter])) {
+  --enter-lead-in: var(--enter-lead);
+}
+
+[data-enter="1"] {
+  --enter-beat: 1;
+}
+
+[data-enter="2"] {
+  --enter-beat: 2;
+}
+
+[data-enter="3"] {
+  --enter-beat: 3;
+}
+
+[data-enter="4"] {
+  --enter-beat: 4;
+}
+
+.page-enter > :not([data-enter], :has([data-enter])) {
+  --enter-beat: 4;
+  animation-name: enter-fade;
+}
+
+/* --- The page's line ---------------------------------------------------
+   Three things in the order a visitor reads them, before the first card.
+
+   The heading rises out of its own baseline as one line: it travels up
+   while a clip holds its lower edge where the line will rest, so it is seen
+   to come up through a slot rather than fade in. The transform and the
+   clip move together on one curve (the inset is the travel less a quarter
+   line for descenders), so the slot never moves. It is one intact element,
+   so kerning and selection are untouched — the reason the old
+   letter-by-letter title was taken out.
+
+   The lede follows a word at a time (`arrival.tsx`): each word comes up
+   out of a short blur, one beat behind the last, and the line is whole by
+   about 1.2s (1s on a phone). Words, not letters: a typewriter makes a
+   reader wait for each character, where a word is the unit read anyway. Only the page's
+   one short lede — never a headline, a summary or a story.
+
+   The figure the page leads with lands in the same slot, without waiting
+   for the lede's last words, and ends on its true value: Market's advancing and declining counts and News's
+   article count count up from zero as they rise; the Stocks price and
+   change do not count — a price ticking upward is exactly what a live quote
+   looks like, and this one is a closed session — so they rise and are
+   simply what they are. Once, on arrival; nothing replays on scroll, and
+   the box is the final value's from the first frame, so nothing beside it
+   moves.
+
+   All of it rests in the finished state: a stylesheet that never loads, or
+   reduced motion, shows the line as it is. */
+@keyframes line-rise {
+  from {
+    transform: translateY(130%);
+    clip-path: inset(-20% -10% 105% -10%);
   }
 
-  & > *:nth-child(2) {
-    animation-delay: 100ms;
+  to {
+    transform: translateY(0);
+    clip-path: inset(-20% -10% -25% -10%);
+  }
+}
+
+.line-rise {
+  animation: line-rise var(--line-duration) cubic-bezier(0.33, 1, 0.68, 1) backwards;
+}
+
+@keyframes word-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.45em);
+    filter: blur(4px);
+  }
+}
+
+.word {
+  display: inline-block;
+  animation: word-in var(--word-duration) cubic-bezier(0.33, 1, 0.68, 1)
+    calc(var(--lede-at) + var(--w, 0) * var(--word-step)) backwards;
+}
+
+/* A second figure beside the first (the change under the price, declining
+   beside advancing) lands one short beat after it. A transform needs a box:
+   an inline figure is given `inline-block` where it is used. */
+.figure-rise,
+.figure-count {
+  --figure-delay: calc(var(--figure-at) + var(--figure-order, 0) * 70ms);
+  animation: line-rise var(--figure-duration) var(--enter-ease) var(--figure-delay) backwards;
+}
+
+/* A figure on a tinted plate: the plate fades in place on the figure's beat
+   and the figure rises inside it. */
+@keyframes plate-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.figure-plate {
+  --figure-delay: calc(var(--figure-at) + var(--figure-order, 0) * 70ms);
+  animation: plate-fade var(--figure-duration) var(--enter-ease) var(--figure-delay) backwards;
+  overflow: hidden;
+}
+
+/* The plate is the slot: the figure comes up through its lower edge and is
+   never drawn outside it. The line's own clip reaches a quarter line below
+   the text for descenders, which on a plate showed the tops of the figures
+   under it. */
+/* Its travel is the plate's lower padding and a little more, so the figure
+   is showing from the plate's first frames: from further down it was still
+   under the edge while the plate had already faded in. */
+@keyframes plate-figure-rise {
+  from {
+    transform: translateY(75%);
+  }
+}
+
+.figure-plate > .figure-rise {
+  animation-name: plate-figure-rise;
+}
+
+/* The count is drawn by a counter in ::after while it runs, over the real
+   text held clear in the same grid cell; the box is the real value's, and
+   right-aligned, so fewer digits never move what follows. When it ends the
+   counter goes and the real text is back — the one that is selected,
+   copied and read aloud (the counter's alternative text is empty). */
+@property --figure-n {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+
+.figure-count {
+  display: inline-grid;
+  justify-items: end;
+}
+
+.figure-count > span,
+.figure-count::after {
+  grid-area: 1 / 1;
+}
+
+.figure-count::after {
+  content: counter(figure-n);
+  content: counter(figure-n) / "";
+  counter-reset: figure-n var(--figure-n);
+  opacity: 0;
+  animation: figure-count var(--figure-duration) var(--enter-ease) var(--figure-delay) backwards;
+}
+
+.figure-count > span {
+  animation: figure-hold var(--figure-duration) linear var(--figure-delay) backwards;
+}
+
+@keyframes figure-count {
+  from {
+    --figure-n: 0;
+    opacity: 1;
   }
 
-  & > *:nth-child(3) {
-    animation-delay: 200ms;
+  to {
+    --figure-n: var(--to);
+    opacity: 1;
   }
+}
 
-  & > *:nth-child(n + 4) {
-    animation-delay: 300ms;
+@keyframes figure-hold {
+  from,
+  to {
+    color: transparent;
+  }
+}
+
+/* --- Changing what the page shows ---------------------------------------
+   A new date, stock, tab or filter is the same page showing something else,
+   not a new arrival, so none of the above replays (`page-entrance.tsx` marks
+   the arrival). The page's content is just replaced, coming up from 40% in a
+   fifth of a second, and the one control that changed takes its lit plate.
+   No card waits its turn and no chart redraws: the visitor asked for the
+   data and gets it the moment it is there. */
+@keyframes enter-refresh {
+  from {
+    opacity: 0.4;
+  }
+}
+
+.page-enter[data-arrival="update"] {
+  animation: enter-refresh 220ms ease-out backwards;
+}
+
+.page-enter[data-arrival="update"]
+  :is(
+    [data-enter],
+    [data-enter]::after,
+    .page-enter > *,
+    .line-rise,
+    .word,
+    .figure-rise,
+    .figure-plate,
+    .figure-count,
+    .figure-count::after,
+    .figure-count > span,
+    .chart-line,
+    .chart-area,
+    .chart-point,
+    .chart-volume,
+    .bar-advancing,
+    .bar-declining
+  ) {
+  animation: none;
+}
+
+/* Pseudo-elements cannot sit inside :is(). */
+.page-enter[data-arrival="update"] [data-enter]::after,
+.page-enter[data-arrival="update"] .figure-count::after {
+  animation: none;
+}
+
+/* Between the click and the answer (`page-entrance.tsx`): what is about to
+   be replaced steps back to the same 40% the new content comes up from, so
+   the change reads as one movement. Not for the first 120ms, so a quick
+   answer is never preceded by a flicker. The row holding the control that
+   was pressed stays as it is. */
+main[data-pending] {
+  cursor: progress;
+}
+
+main[data-pending] .page-enter > :not([data-pending-source]) {
+  opacity: 0.4;
+  transition: opacity 160ms ease-out 120ms;
+}
+
+@keyframes plate-in {
+  from {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.page-enter[data-arrival="update"] .nav-active[aria-current="page"] {
+  animation: plate-in 260ms ease-out backwards;
+}
+
+/* The first cards catch the light once as they settle: their rim brightens
+   from the corner the sky lights (top left, the same as --edge-rim) and
+   goes back to the resting rim. Once, on the 1px edge only, never under a
+   figure, and it is opacity on a layer of its own, so it costs no paint. */
+@keyframes enter-catch {
+  35% {
+    opacity: 1;
+  }
+}
+
+:is(.panel, .panel-raised):is([data-enter="0"], [data-enter="1"], [data-enter="2"], [data-enter="3"])::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--rim-radius);
+  padding: 1px;
+  background: linear-gradient(
+    125deg,
+    rgb(214 228 255 / 0.75),
+    rgb(170 200 255 / 0.22) 38%,
+    rgb(170 200 255 / 0) 62%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  animation: enter-catch 900ms ease-out calc(var(--enter-at) + 200ms) backwards;
+}
+
+/* A phone's screen is a hand's width away and a card crosses most of it, so
+   the same travel reads as twice the motion: shorter, closer, quicker. */
+@media (max-width: 599px) {
+  :root {
+    --enter-step: 80ms;
+    --enter-duration: 420ms;
+    --enter-travel: 10px;
+    --enter-instruments: 200ms;
+    --enter-lead: 240ms;
+    --line-duration: 700ms;
+    --lede-at: 180ms;
+    --word-step: 38ms;
+    --word-duration: 420ms;
+    --figure-at: 220ms;
+    --figure-duration: 540ms;
   }
 }
 
@@ -1518,12 +2349,41 @@ a {
    The mask is 280% of the box and rests at position 0%, so the window sits
    inside the gradient's solid first 45% and the resting state is completely
    opaque. If the animation never runs, the heading is simply a heading. */
+/* No blur since 2026-10-04: the heading arrives as part of the same short
+   fall as the panes under it, and a defocused heading reads as a second,
+   slower event. The sweep stays: it is one mask over an intact line, not a
+   reveal letter by letter.
+
+   Only on headings outside the pages' arrival (error, not-found). A page
+   heading arrives with its block (`data-enter`), so it is not a part of
+   `page-title`. */
+@utility title-resolve {
+  -webkit-mask-image: linear-gradient(
+    95deg,
+    #000 0 45%,
+    rgb(0 0 0 / 0.25) 60%,
+    transparent 72%
+  );
+  mask-image: linear-gradient(
+    95deg,
+    #000 0 45%,
+    rgb(0 0 0 / 0.25) 60%,
+    transparent 72%
+  );
+  -webkit-mask-size: 280% 100%;
+  mask-size: 280% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0% 0;
+  mask-position: 0% 0;
+  animation: title-sweep 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
 @keyframes title-sweep {
   from {
     -webkit-mask-position: 100% 0;
     mask-position: 100% 0;
-    filter: blur(6px);
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
 }
 
@@ -1557,23 +2417,23 @@ a {
 
 .chart-line {
   stroke-dasharray: 1;
-  animation: chart-draw 1100ms cubic-bezier(0.33, 1, 0.4, 1)
-    var(--enter-instruments) backwards;
+  animation: chart-draw 800ms cubic-bezier(0.33, 1, 0.4, 1)
+    calc(var(--enter-at, 0ms) + var(--enter-instruments)) backwards;
 }
 
 /* The area under the line and the closing dot both wait for the line, and the
    line now waits for its panel — so these two carry the same offset rather than
    absolute delays of their own. Written as calc rather than as new numbers so
-   the internal rhythm of a chart (line, then area at +700, then the closing dot
-   at +1000) stays readable and moves as one if the offset ever changes. */
+   the internal rhythm of a chart (line, then area at +500, then the closing dot
+   at +760) stays readable and moves as one if the offset ever changes. */
 .chart-area {
-  animation: chart-fade 500ms ease-out calc(var(--enter-instruments) + 700ms)
-    backwards;
+  animation: chart-fade 360ms ease-out
+    calc(var(--enter-at, 0ms) + var(--enter-instruments) + 500ms) backwards;
 }
 
 .chart-point {
-  animation: chart-fade 320ms ease-out calc(var(--enter-instruments) + 1000ms)
-    backwards;
+  animation: chart-fade 240ms ease-out
+    calc(var(--enter-at, 0ms) + var(--enter-instruments) + 760ms) backwards;
 }
 
 /* --- Breadth ------------------------------------------------------------
@@ -1593,8 +2453,8 @@ a {
    reading them as two that happen to coincide. */
 .bar-advancing,
 .bar-declining {
-  animation: bar-grow 850ms cubic-bezier(0.16, 1, 0.3, 1)
-    calc(var(--enter-instruments) + 100ms) backwards;
+  animation: bar-grow 600ms cubic-bezier(0.16, 1, 0.3, 1)
+    calc(var(--enter-at, 0ms) + var(--enter-instruments) + 100ms) backwards;
 }
 
 .bar-advancing {
@@ -1616,8 +2476,8 @@ a {
 .chart-volume {
   transform-box: fill-box;
   transform-origin: center bottom;
-  animation: volume-grow 850ms cubic-bezier(0.16, 1, 0.3, 1)
-    calc(var(--enter-instruments) + 100ms) backwards;
+  animation: volume-grow 600ms cubic-bezier(0.16, 1, 0.3, 1)
+    calc(var(--enter-at, 0ms) + var(--enter-instruments) + 100ms) backwards;
 }
 
 /* --- The pane arriving --------------------------------------------------
@@ -1649,19 +2509,33 @@ a {
    breathing for a reason that is already written down: `night-sky.tsx` keeps
    them off the panel rectangles, so their invalidation never intersects a pane.
    Motion in this product is affordable exactly where it is bounded. */
-/* The pane also swings a few degrees down into its plane, hinged at the edge
-   it hangs from (--overlay-origin), so it reads as a sheet coming forward from
-   the trigger rather than as a flat card fading in. Eight degrees is the whole
-   of it: enough to see depth for a fifth of a second, far short of a flip. The
-   resting transform is none, so the open menu is perfectly flat and nothing
-   about reading it is 3D. */
+/* Since 2026-10-04 the pane UNFOLDS from its trigger rather than swinging
+   forward: it grows from the trigger's centre (--overlay-origin, measured by
+   the component), a little small and a few pixels up, and its clip opens
+   downward from the top edge, so for a fifth of a second the list visibly
+   comes out of the button that was pressed. The trigger holds its lit state
+   while the pane is open (`[aria-expanded="true"]` below), so the two read as
+   one object. Every row is live from the first frame; nothing waits for the
+   motion. The resting state has no transform and no clip. */
 @keyframes overlay-settle {
   from {
     opacity: 0;
-    transform: perspective(900px) rotateX(-8deg) translateY(-6px) scale(0.97);
+    transform: translateY(-4px) scale(0.94);
+    clip-path: inset(0 0 60% 0 round 16px);
     -webkit-backdrop-filter: blur(2px) saturate(1.35);
     backdrop-filter: blur(2px) saturate(1.35);
   }
+
+  to {
+    clip-path: inset(0 0 0 0 round 16px);
+  }
+}
+
+/* The trigger of an open menu stays lit — the hover step, held — so the
+   pane below it is seen to belong to it. */
+.panel-control[aria-expanded="true"] {
+  background-color: var(--glass-control-hover);
+  --rim: var(--edge-rim-lit);
 }
 
 /* --- Meteors ------------------------------------------------------------
@@ -1835,6 +2709,27 @@ a {
   }
 }
 
+/* Five of the eighteen bright stars (`star-lit`, every fourth) are drawn
+   larger wherever the planet is shown, so a few points in the field read as
+   stars rather than as dust.
+
+   On an iPad all eighteen breathe, an exception to the rule above for the
+   planet's scene: eighteen small opacity changes, each on its own layer.
+   That is still to be watched on an A14 iPad; if it costs frames there,
+   delete the second block. Not on a phone, and not under reduced motion (the
+   !important rule below wins). */
+@media (min-width: 700px) and (min-height: 500px) {
+  .star-lit {
+    transform: translate(-50%, -50%) scale(1.7);
+  }
+}
+
+@media (hover: none) and (min-width: 700px) and (min-height: 500px) {
+  .star-breathe {
+    animation: star-breathe var(--star-dur) ease-in-out var(--star-delay) infinite;
+  }
+}
+
 /* The only motion in the product is transition-colors plus the switcher
    chevron's rotate. The stars do not twinkle and nothing else animates —
    a product reporting a completed session would be lying with its motion
@@ -1879,20 +2774,38 @@ a {
   .depth-far,
   .depth-mid,
   .depth-near,
-  .star-breathe {
+  .star-breathe,
+  .saturn-drift {
     animation: none !important;
   }
 
-  /* Same principle one level up: the page still resolves, it just does not
-     move or defocus. The stagger goes too — a sequence is spatial information,
-     and with nothing travelling there is nothing for it to sequence. */
+  /* The page is simply there: no card rises, nothing waits its turn, and the
+     rim does not catch. A sequence is spatial information, and with nothing
+     travelling there is nothing for it to sequence. */
+  /* The charts in them too: a chart is content, and it is drawn on arrival
+     (each one rests in its finished state). */
+  [data-enter],
+  [data-enter]::after,
   .page-enter > *,
-  .page-title,
+  .line-rise,
+  .word,
+  .figure-rise,
+  .figure-plate,
+  .figure-count,
+  .figure-count::after,
+  .figure-count > span,
+  .nav-active,
   .chart-area,
   .chart-point,
   .chart-volume,
   .bar-advancing,
   .bar-declining {
+    animation: none !important;
+  }
+
+  /* Same principle one level up: a heading outside the pages' arrival (the
+     error and not-found pages) still resolves, it just does not move. */
+  .title-resolve {
     animation: overlay-fade 200ms ease-out !important;
     animation-delay: 0ms !important;
   }

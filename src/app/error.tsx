@@ -57,7 +57,7 @@ export default function Error({
             subsection of nothing — two adjacent steps doing different jobs at
             almost the same size, which is the hierarchy failure the ramp exists
             to prevent. Display clamps down to 36px at narrow widths. */}
-        <h1 className="page-title text-ink">
+        <h1 className="page-title title-resolve text-ink">
           This page could not be loaded
         </h1>
         <p className="mt-1 text-sm text-body">

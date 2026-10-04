@@ -20,11 +20,14 @@ function Cell({
   value,
   detail,
   tone = "neutral",
+  enter,
 }: {
   label: string;
   value: string;
   detail: string;
   tone?: "neutral" | "up" | "down";
+  // Its beat in the page's arrival (globals.css, "The page arriving").
+  enter: string;
 }) {
   const toneClass =
     tone === "up"
@@ -34,7 +37,7 @@ function Cell({
         : "text-ink";
 
   return (
-    <article className="panel px-4 py-4 min-[600px]:px-5 min-[600px]:py-5">
+    <article className="panel px-4 py-4 min-[600px]:px-5 min-[600px]:py-5" data-enter={enter}>
       <h3 className="text-micro font-semibold text-muted">{label}</h3>
       {/* text-figure, not text-3xl. Both resolved to a large mono reading in a
           stat card, but Market Overview's ran at a clamp topping out at 38px
@@ -94,6 +97,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
       <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-4">
         <Cell
           label="Price Movement"
+          enter="1"
           value={formatPercent(ticker.changePercent)}
           detail={`${formatPrice(ticker.price)} at last close`}
           tone={tone(ticker.changePercent)}
@@ -101,6 +105,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
 
         <Cell
           label="Trading Activity"
+          enter="2"
           value={formatRelVolume(ticker.relativeVolume)}
           detail={
             ticker.volume == null
@@ -113,6 +118,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
 
         <Cell
           label="Sector Performance"
+          enter="3"
           value={sector ? formatPercent(sector.changePercent) : "—"}
           detail="Technology sector (XLK)"
           tone={tone(sector?.changePercent)}
@@ -120,6 +126,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
 
         <Cell
           label="Market Performance"
+          enter="4"
           value={market ? formatPercent(market.changePercent) : "—"}
           detail="S&P 500 (SPY)"
           tone={tone(market?.changePercent)}
@@ -127,6 +134,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
 
         <Cell
           label="Peers"
+          enter="4"
           value={
             peers.vsPeersPercent == null
               ? "—"
@@ -144,6 +152,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
 
         <Cell
           label="Period Performance"
+          enter="4"
           value={
             periodPerformance.ytdPercent == null
               ? "—"
@@ -159,6 +168,7 @@ export function ActivityStats({ activity }: { activity: Activity }) {
 
         <Cell
           label="News & Events"
+          enter="4"
           value={String(news.length + events.length)}
           detail={`${news.length} article${news.length === 1 ? "" : "s"}, ${
             events.length

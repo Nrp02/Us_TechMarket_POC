@@ -50,7 +50,7 @@ export function CheckNotes({ warnings }: { warnings: string[] }) {
  */
 export function SectionCard({ text, chart, warnings = [] }: { text: string; chart?: ReactNode; warnings?: string[] }) {
   return (
-    <div className="panel p-5 sm:p-6">
+    <div className="panel pane-quiet p-5 sm:p-6">
       <StoryBody text={text} chart={chart} />
       <CheckNotes warnings={warnings} />
     </div>

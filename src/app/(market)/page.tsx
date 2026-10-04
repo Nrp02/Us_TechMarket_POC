@@ -3,20 +3,10 @@ import { MarketOverview } from "@/components/market-overview";
 import { MarketStory } from "@/components/market-story";
 import { NewsTeaser } from "@/components/news-teaser";
 import { SessionDigest } from "@/components/session-digest";
-import { activityDateLabel, buildActivityDateOptions, resolveActivityDay } from "@/lib/activity-date";
+import { activityDateLabel, buildActivityDateOptions } from "@/lib/activity-date";
 import { formatDayLong } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
-import { computeSectorAverages, computeTopMovers } from "@/lib/market-breadth";
-import {
-  getActivityDates,
-  getDayTickers,
-  getIndexDailyCloses,
-  getMarketStory,
-  getNewsTeaser,
-  getSessionStamp,
-  getTickers,
-} from "@/lib/queries";
-import { INDEX_SYMBOLS, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
+import { getMarketSession, getNewsTeaser } from "@/lib/queries";
 
 // The Market page — whole-market overview, replacing the old personalized
 // Home. There is no separate full-table page: the "Stocks" nav item routes
@@ -42,35 +32,17 @@ export default async function Market({
   const { date } = await searchParams;
   const requestedDate = typeof date === "string" ? date : undefined;
 
-  const availableDates = await getActivityDates();
-  const day = resolveActivityDay(requestedDate, availableDates);
-  const today = tradingDay();
-  const currentDay = day ?? availableDates[0] ?? today;
-
-  const allSymbols = [...INDEX_SYMBOLS, ...TRACKED_STOCK_SYMBOLS];
-  // News is not date-scoped here — the teaser's own job is "most recent 3,
-  // whatever day" regardless of which session the figures above it show (same
-  // reasoning getNewsTeaser's doc comment already states).
-  const [all, news, session, marketStory, indexDailyCloses] = await Promise.all([
-    day ? getDayTickers(allSymbols, day) : getTickers(allSymbols),
+  const [session, news] = await Promise.all([
+    getMarketSession(requestedDate),
+    // The teaser deliberately shows recent news regardless of the selected Session.
     getNewsTeaser(3),
-    getSessionStamp(),
-    getMarketStory(currentDay),
-    getIndexDailyCloses(currentDay),
   ]);
-  const bySymbol = new Map(all.map((t) => [t.symbol, t]));
-  const indices = INDEX_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
-  const trackedStocks = TRACKED_STOCK_SYMBOLS.map((s) => bySymbol.get(s)).filter((t) => t != null);
-
-  // Market Story's charts use the same aggregates the Groq prompt was built
-  // from (computeTopMovers / computeSectorAverages), over this session's
-  // tickers — the same figures the job read, unless a symbol's close was
-  // never stored for a past session.
-  const topMovers = computeTopMovers(trackedStocks);
-  const sectorAverages = computeSectorAverages(trackedStocks);
+  const { day: currentDay, availableDates, indices, trackedStocks,
+    story: marketStory, indexDailyCloses, topMovers, sectorAverages } = session;
+  const today = tradingDay();
 
   const dateOptions = buildActivityDateOptions(availableDates, currentDay, today, (d) =>
-    d === availableDates[0] ? "/" : `/?date=${d}`,
+    d === session.defaultDay ? "/" : `/?date=${d}`,
   );
 
   return (
@@ -81,12 +53,14 @@ export default async function Market({
     // the same as navigating to it.
     <div key={currentDay} className="page-enter flex flex-col gap-10 pb-10">
       <h1 className="sr-only">
-        {session
+        {session.hasSession
           ? `Market session of ${formatDayLong(session.day)}`
           : "US TechMarket — no session recorded yet"}
       </h1>
 
-      <div className="flex justify-end">
+      {/* The page's line, then the overview card by card (globals.css, "The
+          page arriving"); the story and the news fade in after them. */}
+      <div className="flex justify-end" data-enter="0">
         <DatePicker dateLabel={activityDateLabel(currentDay, today)} options={dateOptions} />
       </div>
 

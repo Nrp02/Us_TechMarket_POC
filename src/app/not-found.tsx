@@ -8,7 +8,7 @@ export default function NotFound() {
   return (
     <div className="flex flex-col gap-4 pb-10">
       {/* Display step, matching every other page's h1 — see error.tsx. */}
-      <h1 className="page-title text-ink">
+      <h1 className="page-title title-resolve text-ink">
         That page isn&apos;t here
       </h1>
 

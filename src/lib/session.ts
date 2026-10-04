@@ -7,6 +7,7 @@
 // the clock in one place and from the data in another, and gated freshness on
 // the calendar date a row was written — which a forced weekend refresh defeats.
 
+import { resolveActivityDay } from "@/lib/activity-date";
 import { readAllRows, readRows } from "@/lib/db-read";
 import { buildDayTicker } from "@/lib/day-ticker";
 import { dayWindow, sessionDayTimes, tradingDay } from "@/lib/market";
@@ -78,10 +79,7 @@ export async function latestSessionDay(symbol?: string): Promise<string | null> 
 }
 
 /** Latest session's intraday closes per symbol, keyed by symbol. */
-async function getSparklines(): Promise<Map<string, number[]>> {
-  const day = await latestSessionDay();
-  if (!day) return new Map();
-
+async function getSparklines(day: string): Promise<Map<string, number[]>> {
   const { from, to } = dayWindow(day);
 
   // 49 symbols × 27 bars exceed 1000 rows: read the entire ordered session.
@@ -109,12 +107,9 @@ async function getSparklines(): Promise<Map<string, number[]>> {
   return result;
 }
 
-/** The live cache as Tickers: whatever price_cache holds right now, freshness unchecked. */
-export async function readLiveTickers(
-  symbols: string[],
-  // Sparklines cost a read of every tracked symbol's whole session, so a caller
-  // that does not render one says so rather than paying for it.
-  { sparklines = true }: { sparklines?: boolean } = {},
+/** Live figures refreshed since this Session opened; stale symbols stay absent. */
+async function readLiveTickers(
+  symbols: string[], day: string, sparklines = false,
 ): Promise<Ticker[]> {
   if (!symbols.length) return [];
 
@@ -127,18 +122,18 @@ export async function readLiveTickers(
         .in("symbol", symbols)
         .abortSignal(signal),
     ),
-    sparklines ? getSparklines() : new Map<string, number[]>(),
+    sparklines ? getSparklines(day) : new Map<string, number[]>(),
   ]);
 
-  const bySymbol = new Map(prices.map((row) => [row.symbol, row]));
+  const opened = Date.parse(sessionDayTimes(day).start);
+  const bySymbol = new Map(prices.filter((row) => Date.parse(row.updated_at) >= opened)
+    .map((row) => [row.symbol, row]));
 
   // A read failure can no longer reach this point — it throws upstream — so an
-  // absent row now means what it says: the symbol has never been refreshed. That
-  // was worth nothing while the two were indistinguishable, and is the line that
-  // confirms it next time.
+  // absent row means this symbol has no fresh quote for the Session.
   const missing = symbols.filter((symbol) => !bySymbol.has(symbol));
   if (missing.length) {
-    console.warn(`[read] price-cache has no row for ${missing.join(", ")}`);
+    console.warn(`[read] price-cache has no fresh row for ${missing.join(", ")}`);
   }
 
   return symbols.flatMap((symbol) => {
@@ -264,21 +259,43 @@ export async function readSessionTickers(
   const sessionDay = day ?? latest;
   const isLive = sessionDay === latest;
 
-  let tickers: Ticker[];
-  if (isLive) {
-    const opened = Date.parse(sessionDayTimes(sessionDay).start);
-    const rows = await readRows<PriceRow>(`session-prices:${sessionDay}`, (signal) =>
-      db
-        .from("price_cache")
-        .select("symbol, price, change, change_percent, volume, avg_volume, updated_at")
-        .in("symbol", symbols)
-        .abortSignal(signal),
-    );
-    tickers = rows.filter((row) => Date.parse(row.updated_at) >= opened).map((row) => toTicker(row, []));
-  } else {
-    tickers = await readDayTickers(symbols, sessionDay);
-  }
+  const tickers = isLive
+    ? await readLiveTickers(symbols, sessionDay)
+    : await readDayTickers(symbols, sessionDay);
 
   const bySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   return { day: sessionDay, isLive, tickers: bySymbol, stale: symbols.filter((s) => !bySymbol.has(s)) };
+}
+
+export type PageSession = {
+  day: string;
+  /** The Session shown when the date parameter is absent or invalid. */
+  defaultDay: string;
+  isHistorical: boolean;
+  hasSession: boolean;
+  availableDates: string[];
+  tickers: Ticker[];
+};
+
+/** Resolve the date and read its figures together; only plain JSON crosses the page cache. */
+export async function readPageSession(
+  symbols: string[], requestedDate?: string, symbol?: string,
+): Promise<PageSession> {
+  const [dates, latest, symbolLatest] = await Promise.all([
+    readRows<{ day: string }>("activity-dates", (signal) =>
+      db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal)),
+    latestSessionDay(),
+    symbol ? latestSessionDay(symbol) : Promise.resolve(null),
+  ]);
+  // Retention cleanup runs daily; bound the picker even before cleanup runs.
+  const availableDates = dates.map((row) => row.day).slice(0, 7);
+  const defaultDay = symbolLatest ?? latest ?? tradingDay();
+  const day = resolveActivityDay(requestedDate, availableDates) ?? defaultDay;
+  // A symbol missing the newest Session defaults to its own last Session,
+  // but reads historical closes for every peer rather than mixing in live prices.
+  const isHistorical = latest != null && day !== latest;
+  const tickers = isHistorical
+    ? await readDayTickers(symbols, day)
+    : await readLiveTickers(symbols, day, !symbol);
+  return { day, defaultDay, isHistorical, hasSession: latest != null, availableDates, tickers };
 }

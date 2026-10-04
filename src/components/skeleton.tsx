@@ -28,9 +28,13 @@
 export function SkeletonPanel({
   className = "",
   lines = 3,
+  enter,
 }: {
   className?: string;
   lines?: number;
+  // The beat of the card it stands in for, so the page can take over its
+  // arrival mid-rise (`page-entrance.tsx`).
+  enter?: string;
 }) {
   // Descending widths, because content is ragged and a stack of equal bars
   // reads as a graphic. Deterministic, so the skeleton never flickers between
@@ -38,7 +42,7 @@ export function SkeletonPanel({
   const widths = ["58%", "84%", "40%", "72%", "50%"];
 
   return (
-    <div className={`panel flex flex-col justify-center gap-3 p-5 ${className}`} aria-hidden>
+    <div className={`panel flex flex-col justify-center gap-3 p-5 ${className}`} aria-hidden data-enter={enter}>
       {Array.from({ length: lines }, (_, i) => (
         <span
           key={i}
@@ -52,7 +56,9 @@ export function SkeletonPanel({
 
 export function SkeletonPage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-10 pb-10" role="status" aria-busy>
+    // `page-enter`: the arrival starts here, the moment the link is pressed,
+    // and the page that replaces this carries it on (`page-entrance.tsx`).
+    <div className="page-enter flex flex-col gap-10 pb-10" role="status" aria-busy>
       <span className="sr-only">Loading</span>
       {children}
     </div>

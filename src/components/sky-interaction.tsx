@@ -180,6 +180,9 @@ export function SkyInteraction() {
       };
 
       for (const el of document.querySelectorAll(MATERIALS)) add(el.getBoundingClientRect());
+      // The planet's body (`saturn-scene.tsx`) is opaque and painted over this
+      // canvas, so a star behind it is covered like one behind a panel.
+      for (const el of document.querySelectorAll("[data-sky-occluder]")) add(el.getBoundingClientRect());
       for (const h of document.querySelectorAll("main h2")) {
         if (!h.closest(MATERIALS) && h.parentElement) add(h.parentElement.getBoundingClientRect());
       }

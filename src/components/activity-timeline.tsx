@@ -56,7 +56,7 @@ export function ActivityTimeline({ entries }: { entries: TimelineEntry[] }) {
       </SectionHeading>
 
       {entries.length ? (
-        <div className="panel p-5 min-[1130px]:grid min-[1130px]:grid-cols-2 min-[1130px]:gap-x-10">
+        <div className="panel pane-quiet p-5 min-[1130px]:grid min-[1130px]:grid-cols-2 min-[1130px]:gap-x-10">
           {columns.map((col, ci) => (
             <ol key={ci}>
               {col.map((entry, i) => {
@@ -110,7 +110,7 @@ export function ActivityTimeline({ entries }: { entries: TimelineEntry[] }) {
           ))}
         </div>
       ) : (
-        <p className="panel px-5 py-10 text-sm text-muted">
+        <p className="panel pane-quiet px-5 py-10 text-sm text-muted">
           The timeline starts once this session&apos;s first snapshot is
           recorded, and fills in as the day goes on.
         </p>

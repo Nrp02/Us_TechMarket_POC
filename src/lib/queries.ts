@@ -1,21 +1,21 @@
 import { unstable_cache } from "next/cache";
+import { cache } from "react";
 
 import { readDailyCloses } from "@/lib/daily-closes";
 import { readAllRows, readMaybeOne, readRows } from "@/lib/db-read";
 import { dayWindow, tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
 import { newsRetentionCutoff } from "@/lib/news-retention";
+import { computeSectorAverages, computeTopMovers } from "@/lib/market-breadth";
 import { computePeerComparison, type PeerComparison } from "@/lib/peer-comparison";
 import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
 import {
-  latestSessionDay,
   newestSnapshotAt,
-  readDayTickers,
-  readLiveTickers,
+  readPageSession,
   type Ticker,
 } from "@/lib/session";
 import { db } from "@/lib/supabase";
-import { INDEX_SYMBOLS, PEERS, SECTOR_BY_SYMBOL } from "@/lib/symbols";
+import { INDEX_SYMBOLS, PEERS, SECTOR_BY_SYMBOL, TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 import type { MarketStorySections, StorySections } from "@/lib/story-sections";
 
 // Every Home page read comes from here. Nothing in this file calls an upstream
@@ -48,8 +48,6 @@ import type { MarketStorySections, StorySections } from "@/lib/story-sections";
 const CACHE_SECONDS = 60;
 
 export type { Ticker };
-/** Uncached on purpose: a historical day never changes, and callers already cache around it. */
-export const getDayTickers = readDayTickers;
 
 /**
  * The session the cached data describes: its New York date, and the instant of
@@ -73,13 +71,6 @@ export const getSessionStamp = unstable_cache(
   ["session-stamp"],
   { revalidate: CACHE_SECONDS },
 );
-
-// Ticker[] is plain JSON, so it survives the cache intact. The Map that
-// getSparklines returns deliberately never crosses this boundary — a Map
-// serialises to {} and every sparkline would silently come back empty.
-export const getTickers = unstable_cache(readLiveTickers, ["tickers"], {
-  revalidate: CACHE_SECONDS,
-});
 
 // No `category` field: the thumbnail stopped needing one when market news
 // started being identified by an empty `related_symbols`, and the tab filtering
@@ -339,6 +330,9 @@ export type Activity = {
    * page would otherwise go blank every evening and all weekend.
    */
   sessionDay: string;
+  defaultDay: string;
+  isHistorical: boolean;
+  availableDates: string[];
   ticker: Ticker;
   /** XLK and SPY, for the Sector and Market stat cards. Null before a refresh. */
   sector: Ticker | null;
@@ -395,12 +389,6 @@ async function getIndexDailyClosesUncached(
 ): Promise<{ symbol: string; tradingDay: string; close: number; changePercent: number | null }[]> {
   return readDailyCloses("index-daily-closes", INDEX_SYMBOLS, day);
 }
-
-export const getIndexDailyCloses = unstable_cache(
-  getIndexDailyClosesUncached,
-  ["index-daily-closes"],
-  { revalidate: CACHE_SECONDS },
-);
 
 /** One session's intraday price and volume series for a symbol, oldest first. */
 async function getIntraday(
@@ -464,30 +452,6 @@ async function getSymbolNews(symbol: string, day: string): Promise<NewsItem[]> {
     .map((row) => toNewsItem(row));
 }
 
-/**
- * Every ET trading day Today's Activity, Stocks and Market can show a
- * historical view for, most recent first — bounded by intraday_snapshots'
- * 7-day retention, since that's what a historical day's volume needs (see
- * day-ticker.ts). Mirrors getNewsAvailableDatesUncached's RPC-over-scan
- * approach and its floor reasoning exactly.
- */
-async function getActivityDatesUncached(): Promise<string[]> {
-  const rows = await readRows<{ day: string }>("activity-dates", (signal) =>
-    db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal),
-  );
-  // Guards the same "paused-project resume" case news_days() guards against:
-  // the retention prune runs once a day and only guarantees non-empty, not an
-  // exact 7-day window, so this is trimmed to the most recent 7 in JS rather
-  // than trusted to already be exactly that.
-  return rows.map((row) => row.day).slice(0, 7);
-}
-
-export const getActivityDates = unstable_cache(
-  getActivityDatesUncached,
-  ["activity-dates"],
-  { revalidate: CACHE_SECONDS },
-);
-
 export type MarketStory = { sections: MarketStorySections; generatedAt: string };
 
 async function getMarketStoryUncached(day: string): Promise<MarketStory | null> {
@@ -504,9 +468,34 @@ async function getMarketStoryUncached(day: string): Promise<MarketStory | null> 
   return row ? { sections: row.sections, generatedAt: row.generated_at as string } : null;
 }
 
-export const getMarketStory = unstable_cache(getMarketStoryUncached, ["market-story"], {
-  revalidate: CACHE_SECONDS,
-});
+/** One resolved Market Session, with the narrative and charts for that same day. */
+export const getMarketSession = unstable_cache(
+  async (requestedDate?: string) => {
+    const session = await readPageSession([...INDEX_SYMBOLS, ...TRACKED_STOCK_SYMBOLS], requestedDate);
+    const [story, indexDailyCloses] = await Promise.all([
+      getMarketStoryUncached(session.day),
+      getIndexDailyClosesUncached(session.day),
+    ]);
+    const bySymbol = new Map(session.tickers.map((ticker) => [ticker.symbol, ticker]));
+    const indices = INDEX_SYMBOLS.flatMap((symbol) => {
+      const ticker = bySymbol.get(symbol);
+      return ticker ? [ticker] : [];
+    });
+    const trackedStocks = TRACKED_STOCK_SYMBOLS.flatMap((symbol) => {
+      const ticker = bySymbol.get(symbol);
+      return ticker ? [ticker] : [];
+    });
+    return {
+      day: session.day, defaultDay: session.defaultDay, hasSession: session.hasSession,
+      isHistorical: session.isHistorical, availableDates: session.availableDates,
+      indices, trackedStocks, story, indexDailyCloses,
+      topMovers: computeTopMovers(trackedStocks),
+      sectorAverages: computeSectorAverages(trackedStocks),
+    };
+  },
+  ["market-session"],
+  { revalidate: CACHE_SECONDS },
+);
 
 /**
  * Everything the Today's Activity page renders for one stock. Every field is a
@@ -514,41 +503,18 @@ export const getMarketStory = unstable_cache(getMarketStoryUncached, ["market-st
  * the narrative was written once by the end-of-day job.
  *
  * `day` picks one of the previous 6 trading days instead of the live session.
- * Omitted (the default), this is byte-identical to the pre-ticket-05 behavior:
- * only the historical branch below is new code, the live branch is untouched.
+ * Missing or invalid dates use the latest stored Session for this symbol.
  */
 async function getActivityUncached(symbol: string, day?: string): Promise<Activity | null> {
-  // The snapshots decide which session the page shows by default, and
-  // everything below is then read for that one day — chart, news count,
-  // timeline and narrative all describing the same session rather than each
-  // picking its own.
-  const latestDay = (await latestSessionDay(symbol)) ?? tradingDay();
-  const sessionDay = day ?? latestDay;
-  const isHistorical = sessionDay !== latestDay;
-
   const peerSymbols = PEERS[symbol] ?? [];
+  const session = await readPageSession([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], day, symbol);
+  const sessionDay = session.day;
 
   // One wave, not two: the timeline/events/summary queries only need `symbol`
   // and `sessionDay`, both already known, so they don't have to wait behind the
   // tickers/intraday/news queries above them.
-  const [tickers, intraday, news, timelineRows, eventRows, storyRow, summaryRow, dailyCloses] =
+  const [intraday, news, timelineRows, eventRows, storyRow, summaryRow, dailyCloses] =
     await Promise.all([
-      // This page draws its own chart from getIntraday and renders no sparkline.
-      // Uncached on purpose: the whole of getActivity is cached below, so going
-      // through the cached variant here would only add a second lookup for a
-      // result this one already covers. Peers ride the same query — their
-      // prices are already in price_cache (live) or daily_closes (historical),
-      // so this is a wider `IN (...)` on a table already being read, not a new
-      // upstream call.
-      //
-      // The live path is untouched — getTickersUncached against price_cache,
-      // exactly as before "day" existed. A historical day reads getDayTickers
-      // instead, which has no live cache to fall back on.
-      isHistorical
-        ? readDayTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], sessionDay)
-        : readLiveTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], {
-            sparklines: false,
-          }),
       getIntraday(symbol, sessionDay),
       getSymbolNews(symbol, sessionDay),
       readRows<{ event_at: string; kind: string; label: string; detail: string | null }>(
@@ -607,7 +573,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
       getDailyCloses(symbol, sessionDay),
     ]);
 
-  const bySymbol = new Map(tickers.map((t) => [t.symbol, t]));
+  const bySymbol = new Map(session.tickers.map((t) => [t.symbol, t]));
   const ticker = bySymbol.get(symbol);
   // Narrower than it used to be, and the narrowing matters. This once absorbed
   // a failed read as well, and the route turns null into notFound() — so a
@@ -626,6 +592,9 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
 
   return {
     sessionDay,
+    defaultDay: session.defaultDay,
+    isHistorical: session.isHistorical,
+    availableDates: session.availableDates,
     ticker,
     sector: bySymbol.get(SECTOR_SYMBOL) ?? null,
     market: bySymbol.get(MARKET_SYMBOL) ?? null,
@@ -658,9 +627,9 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
   };
 }
 
-// Keyed by symbol alone — nothing on this page varies by visitor. Every field
+// Keyed by symbol and requested date; metadata and body share a render lookup. Every field
 // in Activity is a string, a number or an array of them, so the object survives
 // the cache unchanged; no timestamp here is a Date that would come back as text.
-export const getActivity = unstable_cache(getActivityUncached, ["activity"], {
+export const getActivity = cache(unstable_cache(getActivityUncached, ["activity"], {
   revalidate: CACHE_SECONDS,
-});
+}));

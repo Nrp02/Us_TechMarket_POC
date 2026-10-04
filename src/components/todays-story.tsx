@@ -51,7 +51,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
     return (
       <section>
         <SectionHeading>Worth Your Attention Today</SectionHeading>
-        <p className="panel p-5 text-sm text-body">
+        <p className="panel pane-quiet p-5 text-sm text-body">
           No story for this session yet. Today&apos;s Story is written once per
           stock after the US market closes.
         </p>
@@ -131,7 +131,7 @@ export function TodaysStory({ activity }: { activity: Activity }) {
             column holding the chart — not per-paragraph pairing, which left
             the second paragraph (no chart of its own) spanning the full
             width and reading as if it had spilled into the chart's lane. */}
-        <div className="panel grid gap-6 p-5 sm:p-6 min-[600px]:grid-cols-2 min-[600px]:items-center">
+        <div className="panel pane-quiet grid gap-6 p-5 sm:p-6 min-[600px]:grid-cols-2 min-[600px]:items-center">
           <div className="flex flex-col gap-4">
             <p className="text-pretty font-serif text-base leading-relaxed text-ink">
               {story.sections.comparison}

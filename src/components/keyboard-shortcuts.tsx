@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { TOP_20_SYMBOLS } from "@/lib/symbols";
+
 // Three routes, so three shortcuts, and no more.
 //
 // The pattern is the two-key `g <letter>` sequence — "go market", "go
@@ -18,7 +20,9 @@ import { useEffect } from "react";
 // permanently on screen.
 export const SHORTCUTS: { key: string; href: string; label: string }[] = [
   { key: "m", href: "/", label: "Market" },
-  { key: "s", href: "/todays-activity", label: "Stocks" },
+  // Straight to the first stock, not `/todays-activity`: that route only
+  // redirects here, and the round trip showed one skeleton, then another.
+  { key: "s", href: `/todays-activity/${TOP_20_SYMBOLS[0]}`, label: "Stocks" },
   { key: "n", href: "/news", label: "News" },
 ];
 

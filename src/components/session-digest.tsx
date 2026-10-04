@@ -1,3 +1,4 @@
+import { CountUp } from "@/components/arrival";
 import { formatPercent } from "@/lib/format";
 import { computeBreadth } from "@/lib/market-breadth";
 import type { Ticker } from "@/lib/queries";
@@ -50,7 +51,7 @@ export function SessionDigest({ tickers }: { tickers: Ticker[] }) {
     // flex-wrap with no breakpoint of its own: the four groups have their own
     // natural widths, so the band folds to two rows wherever they stop fitting
     // rather than at a number somebody picked.
-    <aside className="panel flex flex-wrap items-center gap-x-10 gap-y-5 px-5 py-4">
+    <aside className="panel flex flex-wrap items-center gap-x-10 gap-y-5 px-5 py-4" data-enter="0">
       {moved > 0 ? (
         <>
           {/* Breadth across the tracked universe, as one bar rather than two
@@ -74,9 +75,15 @@ export function SessionDigest({ tickers }: { tickers: Ticker[] }) {
               />
             </div>
 
+            {/* The page's lead figures: they count up once as it arrives
+                (arrival.tsx). */}
             <div className="mt-2.5 flex items-baseline justify-between font-mono text-xs tabular-nums">
-              <span className="text-semantic-up">{advancing} advancing</span>
-              <span className="text-semantic-down">{declining} declining</span>
+              <span className="text-semantic-up">
+                <CountUp value={advancing} /> advancing
+              </span>
+              <span className="text-semantic-down">
+                <CountUp value={declining} order={1} /> declining
+              </span>
             </div>
           </div>
 

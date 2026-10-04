@@ -72,7 +72,7 @@ export function MarketOverview({ tickers }: { tickers: Ticker[] }) {
           uses proxies, not a fact about the market. The visitor needs to know
           the levels are ETFs, because VIXY tracks VIX futures rather than VIX
           itself and the interface must not imply otherwise. */}
-      <SectionHeading meta="Levels shown via ETF proxies">
+      <SectionHeading meta="Levels shown via ETF proxies" enter="1">
         Market Overview
       </SectionHeading>
 
@@ -115,7 +115,7 @@ export function MarketOverview({ tickers }: { tickers: Ticker[] }) {
           to the same max-w-[100px] every other card uses, and the mechanism
           leaves with the problem it was invented for. */}
       <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3 min-[600px]:gap-4 xl:grid-cols-6">
-        {INDEX_CARDS.map((card) => {
+        {INDEX_CARDS.map((card, i) => {
           const ticker = bySymbol.get(card.symbol);
 
           return (
@@ -125,6 +125,8 @@ export function MarketOverview({ tickers }: { tickers: Ticker[] }) {
               // responds to a click. A hover response on inert content is a
               // promise the card cannot keep.
               className="panel px-4 py-4 min-[600px]:px-5 min-[600px]:py-5"
+              // One at a time in reading order, the rest together.
+              data-enter={String(Math.min(i + 1, 4))}
             >
               <h3 className="text-micro font-semibold text-ink">
                 {card.label}
@@ -181,6 +183,7 @@ export function MarketOverview({ tickers }: { tickers: Ticker[] }) {
                       <Sparkline
                         values={ticker.spark}
                         up={ticker.changePercent >= 0}
+                        previousClose={ticker.price - ticker.change}
                         width={100}
                         height={30}
                       />

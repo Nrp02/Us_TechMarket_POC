@@ -1,96 +1,41 @@
 import type { CSSProperties } from "react";
 
-// The page's own atmosphere: one fixed layer behind everything, holding the
-// clouds that carry every trace of blue in the product, and the silver
-// starfield in front of them.
+// The page's own atmosphere: one fixed layer behind everything, holding a
+// silver starfield over near-black space. Saturn (`saturn-scene.tsx`) is the
+// one object in it.
 //
 // Server-rendered inline SVG, and deliberately not a client component. The
 // product's rule is that nothing renders on the client for a purely visual
 // gain, and a night sky is the purest possible case of that. No canvas, no
 // image request, no runtime randomness — the star coordinates below are
-// literals and the clouds are seeded fractals, so the sky is byte-identical on
-// every render and can be hand-tuned.
+// literals, so the sky is byte-identical on every render and can be
+// hand-tuned.
 //
 // The room moves; the data does not. The bright stars breathe, three depth
 // layers sway on one slow period (see "Depth" below), and meteors and the
 // pointer effects in `meteors.tsx` / `sky-interaction.tsx` cross it. The rule
 // that governs all of it: **nothing that carries information may move, and
-// the room may.**
+// the room may.** See `star-breathe` in globals.css for the two constraints
+// that keep the breathing honest: it only ever dims below each star's own
+// base, and it is confined to the bright tier.
 //
-// A price, a change, a badge, a rank and a sparkline are the session, and the
-// session is over — animating any of them would claim something is still
-// happening. A star carries nothing at all. See `star-breathe` in globals.css
-// for the two constraints that keep it honest: it only ever dims below each
-// star's own measured base, and it is confined to this tier.
+// --- Weight ---------------------------------------------------------------
 //
-// --- Two materials, and the ratio between them ----------------------------
+// This sky used to carry five masses of blue fractal cloud and every star at
+// a radius that made it read through clear glass. With a lit planet as the
+// focal object, both competed with it: the clouds were a second subject and
+// the stars, at 2-5px through every pane, read as dust or snow. So the
+// weather is gone — the backdrop is black — and the stars are drawn as
+// points: half the dust and half the dim tier, at 40% and 34% of the radii
+// they were placed at, and the bright tier at 36% (five of them larger on a
+// tablet or desktop; see `star-lit` in globals.css). The positions are the
+// authored ones; only the weight changed. Losing the clouds also loses the
+// two feTurbulence filters, which were the expensive part of the sky.
 //
-// Read the colour strategy at the top of `globals.css` first; this file is
-// where two of its five roles are actually painted, and both are about
-// PROPORTION rather than hue.
-//
-// THE WEATHER is the only large area of colour in the product: FIVE masses,
-// arranged as a system rather than a spread (each is annotated in CLOUDS):
-//
-//   HAZE       very large and very faint (0.07), centred, so even a phone's
-//              cropped middle band has weather in it.
-//   DRIFT      mid-sized, upper middle-left (0.16): the depth between near
-//              and far, and the left half's answer to the right.
-//   DOMINANT   the subject, upper right, centred inside the crop so it keeps
-//              a silhouette.
-//   COMPANION  overlaps the dominant inside the 0.55-0.85 band of their
-//              combined radii, so the two read as one weather system. Nearer
-//              and they merge; further and they become two unrelated blobs.
-//   DISTANT    the faintest mass, far from the pair. Its job is depth.
-//
-// Evenly spaced masses were tried and read as blobs someone had placed: a
-// distribution, not a composition. The frame's weighted centre sits at about
-// 60% of its width. It used to sit at 74%, to counterweight a navigation rail
-// down the left; navigation is now a card across the top, so that reason
-// expired.
-//
-// How this was arrived at is worth stating, because five rounds of scoring
-// functions produced arrangements that all read as odd: **the director fixes
-// the composition, the script checks the constraints.** A weighted sum has no
-// taste, and every attempt to give it some ended with two terms pulling
-// against each other. What the script is good at is answering "does this
-// overlap text, is enough of it visible, is the overlap inside the range" —
-// and it rejected two hand-placed companions before this one passed.
-//
-// THE SILVER is the counterweight, and it is why the blue reads as blue. It
-// runs at three tiers and 313 points, against 76 two passes ago: dust that is
-// barely there, stars, and eighteen bright ones with haloes. Silver kept
-// reading as the scarcer of the two materials, so it has been raised twice —
-// in count, in radius and in opacity at every tier. The dust tier needed the
-// radius most: below about 0.8 units it lands under a pixel once the viewBox
-// is scaled down, and an antialiased sub-pixel dot is a rumour rather than a
-// star.
-//
-// The two materials are also balanced from the other side. Cloud opacities
-// came down by about a sixth in the same pass, which lowers the blue without
-// touching the silver — and the harness caught that it had to: the spread-out
-// composition raised the field's brightest pixel past the value every contrast
-// pair in the product is measured against.
-//
-// --- Why the clouds are displaced rather than thresholded -----------------
-//
-// The first version alpha-thresholded a noise field and blurred it, which
-// produces vapour but never a cloud: the silhouette is statistical, so every
-// edge is equally soft everywhere and the eye reads it as fog on the lens. A
-// real cloud is a BODY — lobes with a defined top and a shadowed underside.
-//
-// So each mass here is drawn as a cluster of soft radial lobes, and the noise
-// is applied to that cluster through `feDisplacementMap`: the silhouette is
-// authored, and the fractal only pushes it around. That is what produces a
-// billowed edge that bulges and pinches instead of dissolving evenly. The
-// cluster then fills a gradient that runs lit at the top to shadowed at the
-// base, so each mass has a light direction — the same upper-left the panel
-// rims are lit from.
-//
-// The cost is one filtered mask per mass, each clipped to that cloud's
-// bounding box. The three masses with the heavy filters sit on a layer that
-// never moves, so it is rasterised once — cheaper than the two full-viewport
-// turbulence passes it replaces, which is why the octave count could go up.
+// Points alone left the sky flat, so the depth is back as a far field of
+// sub-pixel points (FAR, below) rather than as weather. The tiers now run
+// from many to few: hundreds of far points, a hundred-odd dust, fifty-odd
+// dim stars, eighteen bright ones.
 
 // [x, y, radius, opacity] in the 1600x1000 viewBox.
 //
@@ -101,7 +46,76 @@ import type { CSSProperties } from "react";
 // DUST is the tier that does the work the old sky was missing: 190 points too
 // faint to read individually, whose only job is to make the field feel
 // occupied rather than empty between the stars that do read.
-const DUST: [number, number, number, number][] = [
+type StarRow = [number, number, number, number];
+
+// Every second authored point, at a fraction of its authored radius (see
+// "Weight" above). Applied to the data rather than in CSS so that
+// `sky-interaction.tsx`, which glows and joins these same stars, draws them
+// where and how big they are.
+function thin(rows: StarRow[], radius: number, keepEvery = 2): StarRow[] {
+  return rows.filter((_, i) => i % keepEvery === 0).map(([x, y, r, o]) => [x, y, r * radius, o]);
+}
+
+// --- The far field ----------------------------------------------------------
+//
+// What gives the sky its depth: several hundred points well under a pixel,
+// so faint that none reads as a star, behind everything else. Without them
+// the black between the stars is flat; with them it has distance in it.
+//
+// Not spread evenly. A slow random field sets the density, raised to a power
+// so it has real lows: drifts where the points thicken and wide dark patches
+// where there are almost none, which is where the eye rests. The field is
+// smooth at the scale of the frame, so it never gathers into a clump that
+// reads as a galaxy.
+//
+// Seeded, not random at render: the same rows every time, like the literals
+// above, so the sky is byte-identical between renders.
+function seeded(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function farField(count: number, seed: number): StarRow[] {
+  const rand = seeded(seed);
+  // A 7x5 lattice of random heights over the frame, eased between.
+  const cols = 7;
+  const rows = 5;
+  const lattice = Array.from({ length: (cols + 1) * (rows + 1) }, rand);
+  const ease = (t: number) => t * t * (3 - 2 * t);
+  const field = (x: number, y: number) => {
+    const gx = (x / 1600) * cols;
+    const gy = (y / 1000) * rows;
+    const ix = Math.min(Math.floor(gx), cols - 1);
+    const iy = Math.min(Math.floor(gy), rows - 1);
+    const fx = ease(gx - ix);
+    const fy = ease(gy - iy);
+    const at = (i: number, j: number) => lattice[(iy + j) * (cols + 1) + ix + i];
+    const top = at(0, 0) + (at(1, 0) - at(0, 0)) * fx;
+    const bottom = at(0, 1) + (at(1, 1) - at(0, 1)) * fx;
+    return top + (bottom - top) * fy;
+  };
+
+  const out: StarRow[] = [];
+  while (out.length < count) {
+    const x = rand() * 1600;
+    const y = rand() * 1000;
+    if (rand() > 0.06 + 0.94 * field(x, y) ** 2.2) continue;
+    // Mostly the faintest kind, a few a little brighter.
+    const lift = rand() ** 3;
+    out.push([+x.toFixed(1), +y.toFixed(1), +(0.5 + 0.45 * lift).toFixed(2), +(0.3 + 0.4 * lift).toFixed(2)]);
+  }
+  return out;
+}
+
+const FAR: StarRow[] = farField(700, 20261004);
+
+const DUST: StarRow[] = thin([
   [1008, 722.4, 1.44, 0.21],
   [258.3, 452.9, 1.41, 0.22],
   [82.7, 586.4, 1.51, 0.29],
@@ -292,9 +306,9 @@ const DUST: [number, number, number, number][] = [
   [316, 854.3, 1.37, 0.19],
   [1574.1, 495.1, 1.28, 0.22],
   [826.3, 995.8, 1.5, 0.26],
-];
+], 0.4);
 
-export const DIM: [number, number, number, number][] = [
+export const DIM: StarRow[] = thin([
   [1103.7, 70.6, 2.76, 0.53],
   [1316.6, 446.8, 2.45, 0.37],
   [1556.1, 470.2, 2.73, 0.52],
@@ -400,7 +414,7 @@ export const DIM: [number, number, number, number][] = [
   [1447.9, 741.4, 2.92, 0.48],
   [55.5, 165.4, 2.78, 0.52],
   [1550.6, 325.7, 3.08, 0.35],
-];
+], 0.34);
 
 // The bright ones, each with a soft halo.
 //
@@ -417,7 +431,7 @@ export const DIM: [number, number, number, number][] = [
 // units of margin. A dim star bleeding through glass is what the material is
 // for; a crisp bright one under text is a hot spot, and the Worst-Case
 // Composite Rule does not model point sources.
-export const BRIGHT: [number, number, number, number][] = [
+export const BRIGHT: StarRow[] = thin([
   [843.5, 186.7, 3.19, 0.79],
   [506.4, 144, 3.41, 0.57],
   [412.3, 271.7, 4.02, 0.63],
@@ -436,272 +450,7 @@ export const BRIGHT: [number, number, number, number][] = [
   [72.3, 86.4, 4.09, 0.79],
   [148.2, 437.6, 3.15, 0.67],
   [989.4, 154.7, 3.39, 0.74],
-];
-
-// Each mass is a cluster of lobes: [cx, cy, rx, ry, fillOpacity].
-//
-// --- How these four positions were chosen ---------------------------------
-//
-// By solving for them, not by eye. `scripts` is not the place for a one-off,
-// so the search lived in a scratch script, but the objective is worth writing
-// down because the first two runs of it were wrong in instructive ways.
-//
-// The search grids candidate centroids over the viewBox and scores each by:
-// how much of the mass falls on sky a visitor can actually see (page geometry
-// unioned across all three routes), how much falls behind glass (worth less,
-// but not nothing — that is what lights a panel), proximity to a rule-of-
-// thirds intersection, separation from masses already placed, and a penalty
-// for corners. Masses are placed largest-first, in a 1 : 0.77 : 0.6 : 0.47
-// size ratio, and any candidate overlapping text that sits DIRECTLY on the sky
-// is rejected outright — the page headings, the section rules and the ticker
-// header are the only copy in the product with no glass under it.
-//
-// Run one put the dominant mass at 0% visible sky: entirely behind panels,
-// where it would light the glass beautifully and never once read as weather.
-// Run two put it in the bottom-left corner, because the sampler was counting
-// points outside the canvas as "sky with no panel on it" — free score for area
-// that is never rendered. Both were the objective being wrong rather than the
-// answer being surprising, and both are now constraints: a minimum visible
-// fraction, an off-canvas cap, and a real corner penalty.
-//
-// What came out balances without symmetry. The mass-weighted centroid sits at
-// x 792 of 1600 and y 549 of 1000 — near the middle of the frame, while no
-// single mass is anywhere near the middle. The upper left, where the page's
-// own heading sits and where there was far too much blue, is now empty sky.
-//
-// Each mass is a CORE of rounded lobes with a flatter SKIRT under it at half
-// fill. That is the shape of real cloud — piled and rounded on top where the
-// light hits, flat underneath where it does not — and it is what a single ring
-// of ellipses could never produce however much it was displaced.
-const CLOUDS: {
-  id: string;
-  filter: string;
-  opacity: number;
-  box: [number, number, number, number];
-  lobes: [number, number, number, number, number][];
-}[] = [
-  {
-    // HAZE. The layer that makes this read as a sky rather than as a cloud.
-    //
-    // Everything else here is a mass with a silhouette; this is atmosphere —
-    // very large, very faint, and centred on the middle of the frame, which
-    // until now held no weather at all. Two things made that a problem. On a
-    // wide screen the eye found one bright system at the right edge and empty
-    // black everywhere else, so the field read as "a cloud" rather than as air.
-    // And `xMidYMid slice` crops to the CENTRE of the viewBox: at 390px only x
-    // 569-1031 is on screen, which is precisely the band that was empty, so a
-    // phone got a starfield with no weather in it whatsoever.
-    //
-    // 0.07 rather than the 0.17-0.28 the masses run at. It is meant to be felt
-    // and not seen — at a readable opacity a mass this size would flood the
-    // panels and take the field's brightest pixel with it.
-    id: "cloud-haze",
-    filter: "billow-a",
-    opacity: 0.07,
-    box: [80, 170, 1310, 600],
-    lobes: [
-      [725, 430, 330, 200, 1],
-      [945, 470, 275, 168, 1],
-      [515, 468, 258, 158, 1],
-      [755, 566, 420, 120, 0.5],
-    ],
-  },
-  {
-    // DRIFT. A third scale, upper middle-left.
-    //
-    // The composition had two sizes — a dominant system and one faint distant
-    // mass — which reads as near and far with nothing between them. This sits
-    // at about half the dominant's radius and a little over twice the distant's
-    // opacity, so the frame carries three depths rather than two. It is also
-    // inside the phone's visible band, which the other masses are not.
-    // Raised from 0.12 and a quarter larger. At 5% of the field's weight it was
-    // a hint rather than a mass, so the left half of the frame had nothing to
-    // answer the right with.
-    id: "cloud-drift",
-    filter: "billow-b",
-    opacity: 0.16,
-    box: [350, 90, 550, 360],
-    lobes: [
-      [612, 269, 131, 98, 1],
-      [714, 281, 103, 78, 1],
-      [524, 277, 93, 73, 1],
-      [622, 315, 160, 55, 0.45],
-    ],
-  },
-  {
-    // DOMINANT. Crosses the upper right, and it used to cross the middle right.
-    //
-    // It was carrying 47% of the field's visual weight on its own — 61% with
-    // the companion — with both centred at x≈1530 of 1600. The mass-weighted
-    // centroid sat at x 1192, three quarters of the way to the right edge.
-    // Radii are down a fifth and opacity from 0.28, which is what brings the
-    // pair to ~41% and the centroid to ~x 961.
-    //
-    // The reason it sat right is also gone: it counterweighted a navigation
-    // rail on the left, and the rail became a card across the top.
-    //
-    // Lifted as well as shrunk. At 1470px the viewBox crops to x 65-1535, so a
-    // mass centred at 1530 showed only its left flank, which read as a bright
-    // wall down the whole right edge rather than as a body with a top and a
-    // bottom. Centred at 1450 it keeps a silhouette.
-    id: "cloud-dominant",
-    filter: "billow-a",
-    opacity: 0.22,
-    box: [1120, 90, 700, 470],
-    lobes: [
-      [1453, 298, 156, 116, 1],
-      [1583, 323, 124, 96, 1],
-      [1313, 328, 116, 92, 1],
-      [1468, 398, 200, 74, 0.5],
-      [1343, 388, 120, 56, 0.45],
-    ],
-  },
-  {
-    // COMPANION. Its position was searched for inside the relationship rather
-    // than chosen: the only free parameter was where on the 0.55-0.85 overlap
-    // ring it could sit without touching sky-borne text and while keeping half
-    // its area visible. One answer came back.
-    // Moved and shrunk with the dominant so the relationship survives: centres
-    // 175 apart against 260 of combined radii is 0.67, inside the 0.55-0.85
-    // band this position was originally solved for.
-    id: "cloud-companion",
-    filter: "billow-b",
-    opacity: 0.19,
-    box: [1220, 340, 540, 340],
-    lobes: [
-      [1482, 483, 104, 78, 1],
-      [1592, 497, 81, 65, 1],
-      [1377, 501, 75, 61, 1],
-      [1507, 547, 129, 48, 0.5],
-    ],
-  },
-  {
-    // DISTANT. Far corner, faintest, and the only mass whose job is depth
-    // rather than mass. 0.85 of the frame diagonal from the dominant, which is
-    // the minimum at which two clouds stop looking related.
-    //
-    // Moved 200 units right and raised from 0.17. It was placed with a third of
-    // its area off the left edge and the rest of it behind the watchlist panel,
-    // so the one mass whose job was to say "there is more sky than this" was
-    // the one nobody could see. Still a corner mass, still the faintest.
-    id: "cloud-distant",
-    filter: "billow-b",
-    opacity: 0.2,
-    box: [40, 700, 500, 300],
-    lobes: [
-      [280, 850, 110, 84, 1],
-      [380, 862, 84, 66, 1],
-      [190, 858, 79, 64, 1],
-      [290, 898, 136, 51, 0.45],
-    ],
-  },
-];
-
-// The two masses that drift. Both are the FAR layer by their own authored
-// role — HAZE is atmosphere "felt and not seen", DISTANT is the corner mass
-// "whose job is depth" — so moving them reads as air at a distance rather than
-// as weather sliding across the page. The three near masses, and every star,
-// stay exactly where they are.
-const FAR_CLOUDS = new Set(["cloud-haze", "cloud-distant"]);
-
-// The cloud machinery, written once and rendered into two SVGs: the static sky
-// and the drifting far layer. Each SVG carries its OWN defs under a suffix
-// rather than reaching into the other's by id. A cross-SVG url(#…) does
-// resolve in current engines, but it ties the far layer's rasterisation to a
-// document it is deliberately separated from — the point of the split is that
-// the two are independent textures.
-function CloudDefs({
-  suffix,
-  clouds,
-}: {
-  suffix: string;
-  clouds: typeof CLOUDS;
-}) {
-  return (
-    <>
-      {/* Lit at the top, shadowed at the base. Applied per mass rather than
-          across the whole canvas, so every cloud has an underside — which
-          is most of what separates a cloud from a glow. */}
-      <linearGradient id={`cloud-tint${suffix}`} x1="0.15" y1="0" x2="0.6" y2="1">
-        <stop offset="0%" stopColor="#4a83e6" />
-        <stop offset="42%" stopColor="#1d4fa4" />
-        <stop offset="100%" stopColor="#142b56" />
-      </linearGradient>
-
-      {/* One lobe. Solid at the core, gone at the rim — the softness is in
-          the gradient, so the displacement below has something continuous
-          to push around instead of a hard edge to tear. */}
-      <radialGradient id={`lobe${suffix}`}>
-        <stop offset="0%" stopColor="#fff" stopOpacity="1" />
-        <stop offset="45%" stopColor="#fff" stopOpacity="0.82" />
-        <stop offset="100%" stopColor="#fff" stopOpacity="0" />
-      </radialGradient>
-
-      {/* The billow. `feDisplacementMap` pushes the authored silhouette
-          around by a fractal instead of building the silhouette out of one,
-          which is the whole difference between a cloud and fog. Two seeds
-          and two scales so four masses do not read as one stamp repeated. */}
-      <filter
-        id={`billow-a${suffix}`}
-        x="-30%"
-        y="-30%"
-        width="160%"
-        height="160%"
-        colorInterpolationFilters="sRGB"
-      >
-        <feTurbulence type="fractalNoise" baseFrequency="0.0034" numOctaves="4" seed="23" result="n" />
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="120" xChannelSelector="R" yChannelSelector="G" />
-        <feGaussianBlur stdDeviation="13" />
-      </filter>
-      <filter
-        id={`billow-b${suffix}`}
-        x="-30%"
-        y="-30%"
-        width="160%"
-        height="160%"
-        colorInterpolationFilters="sRGB"
-      >
-        <feTurbulence type="fractalNoise" baseFrequency="0.0052" numOctaves="4" seed="71" result="n" />
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="95" xChannelSelector="R" yChannelSelector="G" />
-        <feGaussianBlur stdDeviation="10" />
-      </filter>
-
-      {clouds.map((c) => (
-        <mask key={c.id} id={`${c.id}${suffix}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1600" height="1000">
-          <g filter={`url(#${c.filter}${suffix})`}>
-            {c.lobes.map(([cx, cy, rx, ry, o], i) => (
-              <ellipse key={i} cx={cx} cy={cy} rx={rx} ry={ry} fill={`url(#lobe${suffix})`} fillOpacity={o} />
-            ))}
-          </g>
-        </mask>
-      ))}
-    </>
-  );
-}
-
-// Opacity caps each mass, and these numbers are load-bearing: together they
-// set the brightest field a panel can ever sit in front of, which is what
-// --color-canvas is the composite of and what every contrast pair in the
-// product is measured against. Raising any of them without re-running the
-// harness invalidates all of them. Swaying a far mass does not raise a peak:
-// it moves at most 3px, and the two far masses are the faintest in the sky.
-function CloudMasses({
-  suffix,
-  clouds,
-}: {
-  suffix: string;
-  clouds: typeof CLOUDS;
-}) {
-  return (
-    <>
-      {clouds.map((c) => (
-        <g key={c.id} mask={`url(#${c.id}${suffix})`} opacity={c.opacity}>
-          <rect x={c.box[0]} y={c.box[1]} width={c.box[2]} height={c.box[3]} fill={`url(#cloud-tint${suffix})`} />
-        </g>
-      ))}
-    </>
-  );
-}
+], 0.36, 1);
 
 // Shared by every star SVG layer so each one crops exactly like the others.
 // `slice` scales the field to cover the viewport and crops the excess, so
@@ -718,58 +467,27 @@ const SVG_FRAME = {
 // The sky is a stack of layers at three depths, each its own element so it can
 // be moved as a compositor transform without re-rasterising anything:
 //
-//   far   — the far cloud masses and the dust stars   (depth-far)
-//   —     — the near cloud masses: STATIC, and the one layer carrying the
-//           heavy fractal filters, so it is rasterised once and never moved
+//   far   — the far field and the dust stars           (depth-far)
 //   mid   — the dim stars                              (depth-mid)
 //   near  — the bright stars, which also twinkle       (depth-near)
 //
 // All three depths sway on one shared period and differ only in how far they
 // travel — the nearer, the further. That ratio is what the eye reads as depth:
 // one slow camera drifting past a field, rather than three layers moving
-// independently. The sizes and brightnesses that already separate the tiers
-// (dust 1.2-1.8 units at 0.16-0.32, dim 2.2-3.2 at 0.30-0.55, bright 3.0-4.2 at
-// 0.57-0.79 with a halo) are the other half of the cue and are left exactly as
-// measured. See `depth-*` in globals.css for the amounts and what stops them.
+// independently. The sizes and brightnesses that separate the tiers (dust the
+// faintest and smallest, bright the only ones with a halo) are the other half
+// of the cue. See `depth-*` in globals.css for the amounts and what stops them.
 export function NightSky() {
-  const far = CLOUDS.filter((c) => FAR_CLOUDS.has(c.id));
-  const near = CLOUDS.filter((c) => !FAR_CLOUDS.has(c.id));
-
   return (
     <div className="night-sky" aria-hidden>
-      {/* Far weather. Painted first, as it was in the single SVG this stack
-          replaces: nothing is ever dimmed by haze passing in front of it. */}
-      <div className="sky-layer depth-far">
-        <svg {...SVG_FRAME}>
-          <defs>
-            <CloudDefs suffix="-far" clouds={far} />
-          </defs>
-          <CloudMasses suffix="-far" clouds={far} />
-        </svg>
-      </div>
-
-      {/* Near weather — static on purpose. Its two fractal filters are the
-          expensive part of the whole sky, and a layer that never moves is a
-          texture that is rasterised once and then only composited. */}
-      <div className="sky-layer">
-        <svg {...SVG_FRAME}>
-          <defs>
-            <CloudDefs suffix="" clouds={near} />
-          </defs>
-          <CloudMasses suffix="" clouds={near} />
-        </svg>
-      </div>
-
-      {/* Silver, not blue-white. The sky around them is blue enough that a
-          blue star disappears into its own weather; a neutral, faintly cool
-          metal is what separates the two, and the separation is the point —
-          these two materials are the whole palette of the field.
-
-          Dust sits with the far weather in depth but above the near clouds in
-          paint order, where it always was. */}
+      {/* Silver, not blue-white: a neutral, faintly cool metal that stays
+          apart from the planet's warm cream and from the panes' blue. */}
       <div className="sky-layer depth-far">
         <svg {...SVG_FRAME}>
           <g fill="#c9d0dc">
+            {FAR.map(([cx, cy, r, o], i) => (
+              <circle key={`f${i}`} cx={cx} cy={cy} r={r} opacity={o} />
+            ))}
             {DUST.map(([cx, cy, r, o], i) => (
               <circle key={i} cx={cx} cy={cy} r={r} opacity={o} />
             ))}
@@ -800,9 +518,10 @@ export function NightSky() {
           lands on the same pixel it did in the SVG. Sizes are in `cqw`
           against that box: 1cqw is 16 viewBox units.
 
-          Each star is its core and its halo drawn as one radial gradient,
-          matching the two circles it replaces: a solid core of radius r at the
-          star's opacity, and a halo out to 6r starting at a quarter of it. */}
+          Each star is its core and its halo drawn as one radial gradient: a
+          solid core of radius r at the star's opacity, and a tight halo out
+          to 4r. A wider one (it was 6r) made the larger stars read as round
+          lamps rather than as points of light. */}
       <div className="sky-layer depth-near">
         <div className="sky-slice">
           {BRIGHT.map(([cx, cy, r, o], i) => (
@@ -814,13 +533,13 @@ export function NightSky() {
             // paint, which is the one moment a visitor is looking.
             <span
               key={i}
-              className="sky-star star-breathe"
+              className={i % 4 === 0 ? "sky-star star-breathe star-lit" : "sky-star star-breathe"}
               style={{
                 left: `${(cx / 1600) * 100}%`,
                 top: `${(cy / 1000) * 100}%`,
-                width: `${(r * 12) / 16}cqw`,
-                height: `${(r * 12) / 16}cqw`,
-                background: `radial-gradient(circle closest-side, rgb(244 246 250 / ${o}) 0 16.667%, rgb(231 235 242 / ${(0.25 * o * 5) / 6}) 16.667%, rgb(231 235 242 / 0) 100%)`,
+                width: `${(r * 8) / 16}cqw`,
+                height: `${(r * 8) / 16}cqw`,
+                background: `radial-gradient(circle closest-side, rgb(244 246 250 / ${o}) 0 25%, rgb(231 235 242 / ${(0.2 * o).toFixed(3)}) 25%, rgb(231 235 242 / 0) 100%)`,
                 "--star-dur": `${6.2 + (i % 7) * 0.9}s`,
                 "--star-delay": `-${(i * 1.37).toFixed(2)}s`,
               } as CSSProperties}

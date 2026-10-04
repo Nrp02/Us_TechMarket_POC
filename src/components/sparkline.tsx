@@ -4,11 +4,15 @@
 export function Sparkline({
   values,
   up,
+  previousClose,
   width = 96,
   height = 28,
 }: {
   values: number[];
+  /** The day's change against the previous close, which is what the colour says. */
   up: boolean;
+  /** Drawn as the reference the colour is measured from (see below). */
+  previousClose: number;
   width?: number;
   height?: number;
 }) {
@@ -22,15 +26,15 @@ export function Sparkline({
 
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
+  // The previous close is in the range so its line is always on the plate.
+  const low = Math.min(min, previousClose);
+  const span = Math.max(max, previousClose) - low || 1;
   const step = width / (values.length - 1);
   const pad = 2;
   const usable = height - pad * 2;
 
-  const coords = values.map((value, i) => {
-    const y = pad + usable - ((value - min) / span) * usable;
-    return [i * step, y] as const;
-  });
+  const yOf = (value: number) => pad + usable - ((value - low) / span) * usable;
+  const coords = values.map((value, i) => [i * step, yOf(value)] as const);
   const points = coords
     .map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`)
     .join(" ");
@@ -51,16 +55,32 @@ export function Sparkline({
       // one exists. This said only "Trending up today", so a screen reader got
       // the direction the adjacent signed number already gave it, and none of
       // the shape.
-      aria-label={`${
-        up ? "Trending up today" : "Trending down today"
-      }, from ${values[0].toFixed(2)} to ${values[values.length - 1].toFixed(
+      // The colour is the day against the previous close, and the line is
+      // only the session from the open: a day that opened higher and slid
+      // is up and drawn falling. The label says both, so it never contradicts
+      // its own numbers.
+      aria-label={`${up ? "Up" : "Down"} on the previous close of ${previousClose.toFixed(
         2,
-      )}, session low ${min.toFixed(2)}, high ${max.toFixed(2)}`}
+      )}; this session from ${values[0].toFixed(2)} to ${values[values.length - 1].toFixed(
+        2,
+      )}, low ${min.toFixed(2)}, high ${max.toFixed(2)}`}
     >
       <polygon
         className="chart-area"
         points={area}
         fill={up ? "url(#session-up)" : "url(#session-down)"}
+      />
+      {/* The previous close, dashed: what the colour is measured from, so a
+          green line that falls all day still visibly ends above it. */}
+      <line
+        x1={0}
+        x2={width}
+        y1={yOf(previousClose)}
+        y2={yOf(previousClose)}
+        stroke="var(--color-muted)"
+        strokeWidth={1}
+        strokeDasharray="2 3"
+        opacity={0.7}
       />
       <polyline
         className="chart-line"

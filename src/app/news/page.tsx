@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CountUp, WordReveal } from "@/components/arrival";
 import { DatePicker, type DateOption } from "@/components/date-picker";
 import { NewsList } from "@/components/news-list";
 import { formatDay } from "@/lib/format";
@@ -133,22 +134,31 @@ export default async function News({
     // play on mount, and a ?date= change re-renders this same route, so React
     // kept the old nodes and only the few whose own keys changed replayed —
     // some charts redrew and the rest sat still. A new key remounts the page,
-    // the same as navigating to it.
-    <div key={resolved.isAll ? "all" : (resolved.date ?? today)} className="page-enter flex flex-col gap-10 pb-10">
+    // the same as navigating to it. The tab and the sector are in the key for
+    // the same reason: a filter used to keep the list and replay the arrival
+    // on whichever articles were new to it. Now every change is one remount,
+    // which `page-entrance.tsx` shows as a change rather than an arrival.
+    <div
+      key={`${active}:${activeSector ?? ""}:${resolved.isAll ? "all" : (resolved.date ?? today)}`}
+      className="page-enter flex flex-col gap-10 pb-10"
+    >
       {/* This page's h1 was 24px while Home's ran to 52px, so the two pages
           opened at completely different ranks. Both are the one display element
           on their surface and both take the display step. */}
-      <header className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+      {/* The page's line — the title, its lede, the article count — then the
+          filters, then the first articles one at a time (globals.css, "The
+          page's line" and "The page arriving"). */}
+      <header className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end" data-enter="0">
         <div>
-          <h1 className="page-title text-ink">News</h1>
+          <h1 className="page-title line-rise text-ink">News</h1>
           {/* The measure belongs on the paragraph, not on a 16px wrapper — see
               the note on the Home header for what `ch` actually resolves to. */}
           <p className="mt-3 max-w-[49ch] text-sm text-body">
-            Every summary is AI-written from the source article. Latest first.
+            <WordReveal text="Every summary is AI-written from the source article. Latest first." />
           </p>
         </div>
         <p className="shrink-0 font-mono text-xs tabular-nums text-muted">
-          {items.length} article{items.length === 1 ? "" : "s"} in this tab
+          <CountUp value={items.length} /> article{items.length === 1 ? "" : "s"} in this tab
         </p>
       </header>
 
@@ -158,7 +168,7 @@ export default async function News({
           a thing lifted out of it. The date picker is a second, independent
           filter on the same row, right-aligned so the two read as separate
           controls rather than one continuous strip. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3" data-enter="1">
         <nav
           aria-label="News categories"
           // The stadium is the single-row form. Below 600 the four tabs do not
@@ -225,8 +235,14 @@ export default async function News({
       </div>
 
       {/* Stock News has one optional sector filter; Market News has none. */}
+      {/* Each pill is 24px tall; on a touch pointer an ::after takes its target
+          4px past every edge, so the 8px gaps are shared, not overlapped, and
+          the row keeps its height. */}
       {active === "stock" && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          className="flex flex-wrap items-center gap-2 pointer-coarse:[&>a]:relative pointer-coarse:[&>a]:after:absolute pointer-coarse:[&>a]:after:-inset-1 pointer-coarse:[&>a]:after:content-['']"
+          data-enter="1"
+        >
           <Link
             href={buildHref("stock", resolved.isAll ? "all" : resolved.date ?? undefined)}
             aria-current={!activeSector ? "page" : undefined}

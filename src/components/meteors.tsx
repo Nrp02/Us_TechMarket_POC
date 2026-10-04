@@ -49,9 +49,9 @@ export function Meteors() {
       // depth — nothing at -10, both streaks at -1.
       //
       // Equal z-index with the sky is correct rather than a workaround: this
-      // element comes after <NightSky /> in the layout, so at the same level it
-      // paints on top of the sky and still behind every panel, which is where
-      // weather belongs.
+      // element comes after <NightSky /> and <SaturnScene /> in the layout, so
+      // at the same level it paints on top of the sky and the planet and still
+      // behind every panel, which is where weather belongs.
       className="pointer-events-none fixed inset-0 -z-[1] overflow-hidden"
       aria-hidden
     >

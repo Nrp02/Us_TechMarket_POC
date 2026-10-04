@@ -22,11 +22,13 @@ export function UpcomingEvents({ events }: { events: UpcomingEvent[] }) {
       </SectionHeading>
 
       {events.length ? (
-        <ul className="panel overflow-hidden">
+        <ul className="panel pane-quiet overflow-hidden">
           {events.map((event) => (
             <li
               key={`${event.type}-${event.at}`}
-              className="flex items-baseline justify-between gap-4 border-b border-hairline px-5 py-4 last:border-0"
+              // flex-wrap: at a large text size the date no longer fits beside
+              // the label and was cut off by the panel; it now drops under it.
+              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-hairline px-5 py-4 last:border-0"
             >
               <div>
                 <p className="text-sm font-semibold text-ink">
@@ -43,7 +45,7 @@ export function UpcomingEvents({ events }: { events: UpcomingEvent[] }) {
           ))}
         </ul>
       ) : (
-        <p className="panel px-5 py-10 text-sm text-muted">
+        <p className="panel pane-quiet px-5 py-10 text-sm text-muted">
           No earnings date on the calendar for this stock.
         </p>
       )}

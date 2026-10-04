@@ -37,7 +37,7 @@ import { computeRangePosition } from "@/lib/volatility";
 //
 // Every figure any chart below draws is already fetched by page.tsx for
 // the Groq prompt itself (topMovers/sectorAverages via computeTopMovers/
-// computeSectorAverages, indexDailyCloses via getIndexDailyCloses) — no
+// computeSectorAverages, indexDailyCloses via getMarketSession) — no
 // new query. The range and YTD charts go through the prompt's own functions
 // (computeRangePosition, ytdSeries), so they draw what the sentence states.
 // The movers and sector bars are recomputed from this render's tickers: the
@@ -50,7 +50,7 @@ const MARKET_YTD_LABEL = "Technology (XLK)";
 
 function SectionText({ text, warnings }: { text: string; warnings: string[] }) {
   return (
-    <div className="panel p-5 sm:p-6">
+    <div className="panel pane-quiet p-5 sm:p-6">
       <p className="text-pretty font-serif text-base leading-relaxed text-ink">{text}</p>
       <CheckNotes warnings={warnings} />
     </div>
@@ -138,7 +138,7 @@ export function MarketStory({
     return (
       <section>
         <SectionHeading>Today&apos;s Market</SectionHeading>
-        <p className="panel p-5 text-sm text-body">
+        <p className="panel pane-quiet p-5 text-sm text-body">
           No Market Story for this session yet. It is written once, after the
           US market closes.
         </p>

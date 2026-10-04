@@ -6,6 +6,8 @@ import { ChartGradients } from "@/components/chart-gradients";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { Meteors } from "@/components/meteors";
 import { NightSky } from "@/components/night-sky";
+import { PageEntrance } from "@/components/page-entrance";
+import { SaturnScene } from "@/components/saturn-scene";
 import { SessionMarker } from "@/components/session-marker";
 import { SkyInteraction } from "@/components/sky-interaction";
 import { TopBar } from "@/components/top-bar";
@@ -17,9 +19,18 @@ const inter = Inter({
 });
 
 // Every numeric value renders in mono, per the design system.
+//
+// The fallback is the platform's own monospace, not next/font's adjusted Arial:
+// that one is scaled on average letter width, so its digits ran 16% wider
+// than JetBrains Mono's ("$233.95" 142px against 122px at 390). On a phone the
+// Normal badge wrapped under the price until the font arrived, then jumped back
+// up, the whole of the Stocks page's 0.108 CLS. Monospaced faces share the
+// 0.6em advance, so the swap no longer changes a line break.
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  adjustFontFallback: false,
+  fallback: ["ui-monospace", "Menlo", "Consolas", "monospace"],
 });
 
 // The editorial voice, and the answer to a fair complaint that the product
@@ -97,10 +108,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             component and must stay one — 313 stars and two fractal filters have
             no business shipping to the client — while the meteors need to know
             when a navigation happened. Two layers, one world. */}
-        <Meteors />
-        {/* The pointer glow and the constellations. After the meteors so it
-            paints over them at the same depth, still behind every panel. */}
+        {/* The pointer glow and the constellations, over the stars at the
+            same depth, still behind every panel. */}
         <SkyInteraction />
+        {/* After the stars and the pointer glow, so the planet is in front of
+            them, and still behind every panel. */}
+        <SaturnScene />
+        {/* Last of the sky's layers: a meteor burns up in our own air, so it
+            crosses in front of the planet, never behind it. Still behind
+            every panel. */}
+        <Meteors />
         {/* The nav is only 3 items, so this costs little on most visits —
             but it was still missing, on a codebase that otherwise author its
             own a11y fixes rather than skip them. First focusable element in
@@ -188,6 +205,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             the shortcuts are a property of the document, and the card is a
             component that could stop existing at a narrower width. */}
         <KeyboardShortcuts />
+        {/* Renders nothing: a page replacing its skeleton carries on the
+            skeleton's entrance instead of starting another. */}
+        <PageEntrance />
       </body>
     </html>
   );

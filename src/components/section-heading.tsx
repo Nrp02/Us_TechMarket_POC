@@ -13,10 +13,13 @@ export function SectionHeading({
   children,
   meta,
   id,
+  enter,
 }: {
   children: ReactNode;
   meta?: ReactNode;
   id?: string;
+  // Its beat in the page's arrival (globals.css, "The page arriving").
+  enter?: string;
 }) {
   return (
     // flex-wrap, because both text ends are shrink-0 and the row therefore has
@@ -39,7 +42,7 @@ export function SectionHeading({
     //
     // A row with no meta simply carries 10px of slack under its heading, which
     // costs nothing and buys every section on every page the same start.
-    <div className="mb-4 flex min-h-[38px] flex-wrap items-baseline gap-4">
+    <div className="mb-4 flex min-h-[38px] flex-wrap items-baseline gap-4" data-enter={enter}>
       <h2
         id={id}
         className="shrink-0 text-xl font-semibold tracking-tight text-ink"

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
 // Was a native <details>/<summary> disclosure — the only one in the codebase.
 // That kept the News page a server component with zero client JS, but native
@@ -38,6 +38,11 @@ export function DatePicker({
   options: DateOption[];
 }) {
   const [open, setOpen] = useState(false);
+  const [triggerWidth, setTriggerWidth] = useState(0);
+  // The day just chosen, named on the button while the page fetches it, so
+  // the click is answered in the control that took it. The page remounts on
+  // arrival (it is keyed on the day), which clears it.
+  const [chosen, setChosen] = useState<string | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   // Only referenced while the list is rendered, not set unconditionally —
@@ -79,14 +84,17 @@ export function DatePicker({
       <button
         ref={trigger}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setTriggerWidth(trigger.current?.offsetWidth ?? 0);
+          setOpen((v) => !v);
+        }}
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         // 44px on a touch pointer, unchanged on a mouse — the same
         // pointer-coarse floor every other control in this product takes.
         className="panel-control flex w-fit items-center gap-2 px-4 py-2 text-sm font-semibold text-ink pointer-coarse:min-h-11"
       >
-        {dateLabel}
+        {chosen ?? dateLabel}
         <svg
           viewBox="0 0 20 20"
           className={`size-4 text-muted transition-transform ${open ? "rotate-180" : ""}`}
@@ -104,7 +112,12 @@ export function DatePicker({
       </button>
 
       {open && (
-        <div className="panel-overlay absolute right-0 z-20 mt-2 w-56 rounded-2xl p-1 [--overlay-origin:top_right]">
+        // Grows from the centre of the button above it, which is right-aligned
+        // with it, so the list is seen to come out of what was pressed.
+        <div
+          className="panel-overlay absolute right-0 z-20 mt-2 w-56 rounded-2xl p-1"
+          style={{ "--overlay-origin": `calc(100% - ${triggerWidth / 2}px) 0` } as CSSProperties}
+        >
           <ul id={listId}>
             {options.map((option) => (
               <li
@@ -115,7 +128,10 @@ export function DatePicker({
               >
                 <Link
                   href={option.href}
-                  onClick={() => close()}
+                  onClick={() => {
+                    if (!option.current) setChosen(option.label);
+                    close();
+                  }}
                   aria-current={option.current ? "page" : undefined}
                   className={`block rounded-xl px-3 py-2 text-sm font-medium press ${
                     option.current

@@ -17,6 +17,8 @@ const { ComparisonBars, RankedBars, RangeBar } = await loadComponent("../compone
   typeof import("../components/story-charts");
 const { IntradayChart } = await loadComponent("../components/intraday-chart.tsx") as
   typeof import("../components/intraday-chart");
+const { Sparkline } = await loadComponent("../components/sparkline.tsx") as
+  typeof import("../components/sparkline");
 
 test("mixed-sign comparisons grow outward from zero without changing values", () => {
   const html = renderToStaticMarkup(ComparisonBars({ stock: 3, sector: -2, market: 1, peerAverage: null }));
@@ -53,11 +55,27 @@ test("range marker fades at its real position rather than travelling through inv
 });
 
 test("only volume data bars animate; tooltip hit columns remain stationary", () => {
-  const html = renderToStaticMarkup(IntradayChart({ up: true, points: [
+  const html = renderToStaticMarkup(IntradayChart({ up: true, previousClose: 99, points: [
     { at: "2026-09-25T14:00:00Z", price: 100, volume: 200 },
     { at: "2026-09-25T14:15:00Z", price: 101, volume: 400 },
   ] }));
   assert.equal((html.match(/class="chart-volume"/g) ?? []).length, 2);
   assert.equal((html.match(/<rect/g) ?? []).length, 4);
   assert.match(html, /chart-line/);
+});
+
+test("a day up on the previous close but falling from the open is drawn and labelled as both", () => {
+  // Opened at 105 over a previous close of 100, slid to 102: up 2% on the day.
+  const intraday = renderToStaticMarkup(IntradayChart({ up: true, previousClose: 100, points: [
+    { at: "2026-09-25T13:30:00Z", price: 105, volume: 200 },
+    { at: "2026-09-25T20:00:00Z", price: 102, volume: 400 },
+  ] }));
+  assert.match(intraday, /Up on the previous close of \$100\.00; this session from \$105\.00/);
+  assert.match(intraday, /stroke-dasharray="3 4"/);
+  // The previous close sits on the plot's floor, below the session's low.
+  assert.match(intraday, /y1="188" y2="188" stroke="var\(--color-muted\)"/);
+
+  const spark = renderToStaticMarkup(Sparkline({ up: true, previousClose: 100, values: [105, 102] }));
+  assert.match(spark, /Up on the previous close of 100\.00; this session from 105\.00 to 102\.00/);
+  assert.match(spark, /stroke-dasharray="2 3"/);
 });

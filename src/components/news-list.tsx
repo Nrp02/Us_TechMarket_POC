@@ -17,7 +17,7 @@ export function NewsList({
   emptyMessage?: string;
 }) {
   if (!items.length) {
-    return <p className="panel px-5 py-10 text-sm text-muted">{emptyMessage}</p>;
+    return <p className="panel px-5 py-10 text-sm text-muted" data-enter="2">{emptyMessage}</p>;
   }
 
   return (
@@ -39,13 +39,18 @@ export function NewsList({
     // need every row to become an opaque plate, which is the One Translucent
     // Layer Rule broken for the sake of a line.
     <ul className="panel overflow-hidden min-[1130px]:grid min-[1130px]:grid-cols-2 min-[1130px]:[&>li:nth-child(odd)]:border-r min-[1130px]:[&>li:nth-last-child(-n+2)]:border-b-0">
-      {items.map((item) => {
+      {items.map((item, i) => {
         const symbol = item.relatedSymbols[0] ?? null;
 
         return (
         <li
           key={item.id}
           className="flex gap-4 border-b border-hairline p-5 last:border-0 hover:bg-surface-soft"
+          // The articles arrive on the panel one at a time in reading order
+          // (globals.css, "The page arriving"), a beat behind the filters: the
+          // first two, then the rest of the first screen together. Past the eighth they are below the
+          // screen at every designed size, so they are simply there.
+          data-enter={i < 8 ? String(Math.min(i + 2, 4)) : undefined}
         >
           <NewsThumbnail symbol={symbol} />
 

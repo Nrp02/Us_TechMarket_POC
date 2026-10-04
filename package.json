@@ -11,14 +11,16 @@
     "migrate": "node --experimental-strip-types --env-file=.env.local scripts/migrate.mts",
     "setup-cron": "node --experimental-strip-types --env-file=.env.local scripts/setup-cron.mts",
     "backfill-daily-closes": "node --experimental-strip-types --env-file=.env.local scripts/backfill-daily-closes.mts",
-    "backfill-fundamentals": "node --experimental-strip-types --env-file=.env.local scripts/backfill-fundamentals.mts"
+    "backfill-fundamentals": "node --experimental-strip-types --env-file=.env.local scripts/backfill-fundamentals.mts",
+    "check:motion": "node --experimental-strip-types scripts/check-route-motion.mts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "@vercel/analytics": "^2.0.1",
     "next": "16.3.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -26,9 +28,11 @@
     "@types/pg": "^8.21.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.186.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "pg": "^8.23.0",
+    "puppeteer-core": "^25.12.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

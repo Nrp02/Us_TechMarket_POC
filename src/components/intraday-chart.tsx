@@ -29,9 +29,13 @@ const TIME_LABELS = 5;
 export function IntradayChart({
   points,
   up,
+  previousClose,
 }: {
   points: IntradayPoint[];
+  /** The day's change against the previous close, which is what the colour says. */
   up: boolean;
+  /** Drawn dashed as the reference the colour is measured from. */
+  previousClose: number;
 }) {
   if (points.length < 2) {
     return (
@@ -44,7 +48,11 @@ export function IntradayChart({
   const prices = points.map((p) => p.price);
   const low = Math.min(...prices);
   const high = Math.max(...prices);
-  const span = high - low || 1;
+  // The scale takes in the previous close so its line is always on the plot;
+  // the grid is drawn on the scale, so its labels stay true.
+  const floor = Math.min(low, previousClose);
+  const ceiling = Math.max(high, previousClose);
+  const span = ceiling - floor || 1;
 
   const volumes = points.map((p) => p.volume ?? 0);
   const peakVolume = Math.max(...volumes) || 1;
@@ -52,7 +60,7 @@ export function IntradayChart({
   const step = (PLOT_RIGHT - LEFT) / (points.length - 1);
   const x = (i: number) => LEFT + i * step;
   const priceY = (value: number) =>
-    PRICE_BOTTOM - ((value - low) / span) * (PRICE_BOTTOM - PRICE_TOP);
+    PRICE_BOTTOM - ((value - floor) / span) * (PRICE_BOTTOM - PRICE_TOP);
 
   const stroke = up ? "var(--color-semantic-up)" : "var(--color-semantic-down)";
   const line = points.map((p, i) => `${x(i).toFixed(1)},${priceY(p.price).toFixed(1)}`);
@@ -87,16 +95,21 @@ export function IntradayChart({
         // with no JavaScript. This label carries the shape of the session
         // instead of every reading in it.
         aria-label={
-          `Intraday price and volume. ${up ? "Trending up" : "Trending down"} today, ` +
-          `from ${formatPrice(points[0].price)} at ${formatEtTime(points[0].at)} ` +
+          // The colour is the day against the previous close; the line is
+          // only the session from the open, so a day that opened higher and
+          // slid is up and drawn falling. The label says both.
+          `Intraday price and volume. ${up ? "Up" : "Down"} on the previous close of ${formatPrice(previousClose)}; ` +
+          `this session from ${formatPrice(points[0].price)} at ${formatEtTime(points[0].at)} ` +
           `to ${formatPrice(points[last].price)} at ${formatEtTime(points[last].at)}, ` +
           `session low ${formatPrice(low)}, high ${formatPrice(high)}. ` +
           `Peak 15-minute volume ${formatVolume(peakVolume)} shares.`
         }
       >
         {/* Grid stays recessive — it is a reference, not part of the data. */}
-        {[high, low + span / 2, low].map((value) => {
+        {[ceiling, floor + span / 2, floor].map((value) => {
           const y = priceY(value);
+          // The previous close carries its own label (below).
+          const hidden = Math.abs(y - priceY(previousClose)) < 14;
           return (
             <g key={value}>
               <line
@@ -107,16 +120,37 @@ export function IntradayChart({
                 stroke="var(--color-hairline)"
                 strokeWidth={1}
               />
-              <text
-                x={PLOT_RIGHT + 10}
-                y={y + 4}
-                className="fill-[var(--color-muted)] font-mono text-micro"
-              >
-                {formatPrice(value)}
-              </text>
+              {hidden ? null : (
+                <text
+                  x={PLOT_RIGHT + 10}
+                  y={y + 4}
+                  className="fill-[var(--color-muted)] font-mono text-micro"
+                >
+                  {formatPrice(value)}
+                </text>
+              )}
             </g>
           );
         })}
+
+        {/* The previous close, dashed: what the colour is measured from, so a
+            green line that falls all day still visibly ends above it. */}
+        <line
+          x1={LEFT}
+          x2={PLOT_RIGHT}
+          y1={priceY(previousClose)}
+          y2={priceY(previousClose)}
+          stroke="var(--color-muted)"
+          strokeWidth={1}
+          strokeDasharray="3 4"
+        />
+        <text
+          x={PLOT_RIGHT + 10}
+          y={priceY(previousClose) + 4}
+          className="fill-[var(--color-muted)] font-mono text-micro"
+        >
+          {formatPrice(previousClose)}
+        </text>
 
         {/* Same fill the sparklines carry, from the same document-level
             gradient defs, so a row's 96px chart and this 780px one are visibly

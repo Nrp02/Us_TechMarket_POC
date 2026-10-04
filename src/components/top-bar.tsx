@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SHORTCUTS } from "@/components/keyboard-shortcuts";
+import { TOP_20_SYMBOLS } from "@/lib/symbols";
 
 // One drawing convention for every glyph in the product: 24x24 viewBox,
 // currentColor stroke, round caps and joins, no fill. Nothing here is an icon
@@ -60,7 +61,15 @@ const NAV_ITEMS = [
   // owner's call after seeing the Top-20-table build: clicking Stocks
   // should land on a stock's own page (NVDA by default), same as the old
   // Today's Activity nav item did before the Market Story pivot.
-  { href: "/todays-activity", label: "Stocks", icon: StocksIcon },
+  // Linked straight to the stock, not to `/todays-activity`, which only
+  // redirects: the round trip showed a skeleton for each route in turn.
+  // `section` is what marks it active on any stock.
+  {
+    href: `/todays-activity/${TOP_20_SYMBOLS[0]}`,
+    section: "/todays-activity",
+    label: "Stocks",
+    icon: StocksIcon,
+  },
   { href: "/news", label: "News", icon: NewsIcon },
 ] as const;
 
@@ -185,7 +194,7 @@ export function TopBar({ marker }: { marker?: ReactNode }) {
             const isActive =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname.startsWith("section" in item ? item.section : item.href);
             const Icon = item.icon;
             const key = KEY_BY_HREF.get(item.href);
 
