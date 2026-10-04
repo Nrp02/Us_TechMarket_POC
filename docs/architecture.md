@@ -113,7 +113,7 @@ Shell (`app/layout.tsx`): `top-bar`, `keyboard-shortcuts`, `session-marker`, `ch
 | `stories` / `market_stories` | story / market-story generation | queries |
 | `news_days()`, `activity_days()` RPCs | migrations 0009, 0015 | queries |
 
-Migrations: `supabase/migrations/0001…0023` (0022 retires the analysis-attempt table; 0023 adds the timeline replace RPC, applied to the shared database; 0022 is not yet applied), applied with `scripts/migrate.mts`. `watchlist` was dropped in `0017`.
+Migrations: `supabase/migrations/0001…0023` (0022 retires the analysis-attempt table; 0022 and 0023 are applied to the shared database), applied with `scripts/migrate.mts`. `watchlist` was dropped in `0017`.
 
 ## Scripts
 
