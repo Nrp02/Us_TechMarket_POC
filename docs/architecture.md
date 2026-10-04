@@ -1,6 +1,6 @@
 # Architecture map
 
-> Where things live, derived from the code at commit 04583fe (2026-09-29): imports, `db.from()`/`db.rpc()` calls, and `scripts/setup-cron.mts`. Use it to jump to the right file; read the file before trusting a detail. If this map and the code disagree, the code wins — fix the map.
+> Where things live, updated from the current code on 2026-10-05: imports, `db.from()`/`db.rpc()` calls, and `scripts/setup-cron.mts`. Use it to jump to the right file; read the file before trusting a detail. If this map and the code disagree, the code wins — fix the map.
 
 ## The shape in one picture
 
@@ -28,7 +28,7 @@ Two directions that never meet: **jobs write**, **pages read**. A page importing
 | `intraday-snapshots` | `*/15 13-21 * * 1-5` | `api/refresh` | `refresh.ts` (+ `refresh-rows.ts`), then `timeline-rebuild.ts` | `price_cache`, `intraday_snapshots`, `daily_closes`, `fundamentals`, `sec_filings`, `macro_indicators`, `timeline_events` |
 | `news-ingest` | `7 0,2,…,20,21 * * *` (in script; live cron may differ) | `api/ingest-news` | `news-ingest.ts` | `news`, `news_summaries`, `news_evidence` |
 | `daily-summaries` | `5-55/10 22-23 * * 1-5` | `api/daily-summary` | `daily-summary.ts` | `daily_summaries`, `timeline_events` |
-| `today-story` | `0-55/5 20-23 * * 1-5` | `api/story` | `story-generation.ts`, `market-story-generation.ts` | `stories`, `market_stories`, `story_analysis_attempts` |
+| `today-story` | `0-55/5 20-23 * * 1-5` | `api/story` | `story-generation.ts`, `market-story-generation.ts` | `stories`, `market_stories` |
 | `data-retention-cleanup` | `0 4 * * *` | pure SQL (`0007`/`0008`) | `prune_old_data()` | deletes old rows |
 
 Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRON_SECRET` and return 503 when unset.
@@ -59,9 +59,9 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 - input: `story-input.ts` composes pure engines — `peer-comparison.ts`, `movement-classification.ts`, `volatility.ts`, `trend-detection.ts`, `period-performance.ts`, `fundamentals.ts`, `significance.ts`
 - context: `day-news.ts`, `daily-closes.ts`, `story-fundamentals.ts` (`fundamentals_history`), `story-business-context.ts`, SEC filings, FRED rates
 - prompt + checks: `story-guideline.ts` (reasoning method), `story-analysis-quality.ts` (prompt rendering, schema, deterministic validators)
-- call + bookkeeping: `story-analysis-call.ts` (Groq call, effort, attempt rows)
+- call: `story-analysis-call.ts` (one Groq call, fixed effort/token ceiling; no feedback ledger or correction call)
+- scheduling: one pending stock per five-minute slot, with a rotating starting symbol; locally computed shown/logged checks publish with the story
 - stored shape: `story-sections.ts`
-- replay/backfill: `story-history.ts`, `scripts/backfill-story-analysis.mts`
 
 **Market Story** — `market-story-generation.ts` with `market-story-input.ts` (`market-breadth.ts`, `volatility.ts`, `trend-detection.ts`, `period-performance.ts`, `fred.ts`, `fomc-calendar.ts`) and `market-story-guideline.ts`; shares `story-analysis-call.ts`/`story-analysis-quality.ts`/`story-sections.ts` with Today's Story.
 
@@ -71,14 +71,16 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 |---|---|
 | `supabase.ts` | server client (throws at import without env — keep testable logic out of modules that import it) |
 | `db-read.ts` | every read: timeout, retry with fresh signal, throws on error/truncation |
-| `queries.ts` | all page reads, cached: `getTickers`, `getDayTickers`, `getSessionStamp`, `getNews`, `getNewsTeaser`, `getNewsDates`, `getIndexDailyCloses`, `getActivityDates`, `getMarketStory`, `getActivity` |
-| `session.ts` / `day-ticker.ts` | which session the data describes; live vs historical per-symbol figures |
-| `activity-date.ts`, `news-date.ts` | resolve the `?date=` param |
+| `queries.ts` | all page reads, cached: `getMarketSession`, `getActivity`, `getSessionStamp`, `getNews`, `getNewsTeaser`, `getNewsDates` |
+| `session.ts` / `day-ticker.ts` | `readPageSession` resolves dates and reads matching figures/provenance together; a stock missing the newest Session defaults to its own last Session and reads historical peer figures |
+| `activity-date.ts`, `news-date.ts` | date labels/options and date normalization; Session callers consume the resolved date from queries |
 | `news-category.ts` | Stock vs Market tab, sector filters |
 | `news-retention.ts` | the News page's oldest-day floor |
 | `format.ts` | all ET formatting |
 | `logos.ts` | Brandfetch URLs |
 | `symbols.ts` | Top 20, 43 tracked, ETFs, `PEERS`, `CIK_BY_SYMBOL`, sectors |
+
+Session-dependent headings and stock metadata use the same resolved query payload as their figures. `getActivity` is memoized within a render as well as cached for 60 seconds. News remains calendar-day based; the Market teaser deliberately stays recent. The one-off story backfill and its historical-input module were removed after that repair completed.
 
 ## Pages → components
 
@@ -100,21 +102,20 @@ Shell (`app/layout.tsx`): `top-bar`, `keyboard-shortcuts`, `session-marker`, `ch
 | `daily_closes` | refresh | daily-closes, session |
 | `fundamentals` | refresh | (source for the history trigger) |
 | `fundamentals_history` | trigger `archive_fundamentals()` on `fundamentals` (0018) | story-fundamentals |
-| `sec_filings` | refresh | story-generation, story-history |
+| `sec_filings` | refresh | story-generation |
 | `macro_indicators` | refresh | story + market-story generation |
 | `news`, `news_summaries`, `news_evidence` | news-ingest | queries, day-news, story-business-context |
 | `events` | daily-summary | queries |
 | `timeline_events` | timeline-rebuild | queries |
 | `daily_summaries` | daily-summary | queries |
 | `stories` / `market_stories` | story / market-story generation | queries |
-| `story_analysis_attempts` | story-analysis-call | story-analysis-call |
 | `news_days()`, `activity_days()` RPCs | migrations 0009, 0015 | queries |
 
-Migrations: `supabase/migrations/0001…0021`, applied with `scripts/migrate.mts`. `watchlist` was dropped in `0017`.
+Migrations: `supabase/migrations/0001…0022` (0022 retires the analysis-attempt table), applied with `scripts/migrate.mts`. `watchlist` was dropped in `0017`.
 
 ## Scripts
 
-`setup-cron.mts` (provision schedules — owner-run), `migrate.mts`, `backfill-daily-closes.mts`, `backfill-fundamentals.mts`, `backfill-story-analysis.mts`, `smoke-news-ai.mts` (provider smoke test), `test-resolve.mts`.
+`setup-cron.mts` (provision schedules — owner-run), `migrate.mts`, `backfill-daily-closes.mts`, `backfill-fundamentals.mts`, `smoke-news-ai.mts` (provider smoke test), `test-resolve.mts`.
 
 ## Where to start for common tasks
 
