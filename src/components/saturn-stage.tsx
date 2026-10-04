@@ -3,6 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { DESKTOP_MQ } from "@/components/planet-contract";
+import { hydrated } from "@/components/page-measure";
 import { watchPageRest } from "@/components/page-rest";
 import type { SaturnRender, SaturnTier } from "@/components/saturn-webgl";
 
@@ -70,11 +72,26 @@ function poseAt({ animation, keys }: { animation: Animation; keys: Pose[] }): Po
 // anything else is a tablet. A phone has no planet at all, upright (under
 // 700px wide) or on its side (under 500px tall) — the scene is `display: none`
 // there (see "Saturn" in globals.css) and the render is never downloaded.
-const PLANET_MQ = "(min-width: 700px) and (min-height: 500px)";
-const DESKTOP_MQ = "(hover: hover) and (pointer: fine) and (min-width: 1024px)";
 
-function saturnTier(): SaturnTier | null {
-  if (!matchMedia(PLANET_MQ).matches) return null;
+// The stylesheet decides whether the planet is shown at all (its breakpoint is
+// in globals.css), so the stage asks it rather than repeating the breakpoint.
+const planetShown = (scene: HTMLElement) => getComputedStyle(scene).display !== "none";
+
+// Calls `onFlip` when the planet appears or goes away, not on every resize.
+function watchPlanetShown(scene: HTMLElement, onFlip: () => void) {
+  let shown = planetShown(scene);
+  const observer = new ResizeObserver(() => {
+    const now = planetShown(scene);
+    if (now === shown) return;
+    shown = now;
+    onFlip();
+  });
+  observer.observe(scene);
+  return () => observer.disconnect();
+}
+
+function saturnTier(scene: HTMLElement): SaturnTier | null {
+  if (!planetShown(scene)) return null;
   return matchMedia(DESKTOP_MQ).matches ? "desktop" : "tablet";
 }
 
@@ -86,10 +103,6 @@ const BODY = 0.21;
 // the pane's edge it carries, in body radii.
 const CATCH_REACH = 1.3;
 const CATCH_SPAN = 1.1;
-
-function hydrated(el: Element) {
-  return Object.keys(el).some((key) => key.startsWith("__reactFiber"));
-}
 
 /**
  * The planet's light on the glass: for every rimmed pane near the planet,
@@ -167,7 +180,7 @@ export function SaturnStage({ children }: { children: ReactNode }) {
     shownPath.current = pathname;
     // The planet's light goes out until the new page is at rest (below).
     document.documentElement.dataset.traveling = "";
-    if (!matchMedia(PLANET_MQ).matches || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!scene || !planetShown(scene) || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     // From where the planet is on screen now — mid-move, if a click comes
     // before the last move landed — to where this route puts it.
     const view = scene?.firstElementChild;
@@ -218,7 +231,6 @@ export function SaturnStage({ children }: { children: ReactNode }) {
     if (!scene || !(view instanceof HTMLElement)) return;
 
     const root = document.documentElement;
-    const planetMq = matchMedia(PLANET_MQ);
     let lit = new WeakMap<Element, string>();
     let settle = 0;
 
@@ -229,7 +241,7 @@ export function SaturnStage({ children }: { children: ReactNode }) {
       return three === "on" ? 1 : three === "off" ? 0.5 : 0;
     };
     const place = () => {
-      if (planetMq.matches) {
+      if (planetShown(scene)) {
         placeCatch(view, strength(), lit);
         return;
       }
@@ -255,7 +267,7 @@ export function SaturnStage({ children }: { children: ReactNode }) {
     sceneObserver.observe(scene, { attributes: true, attributeFilter: ["data-three"] });
     const stopWatching = watchPageRest({ scene, onRest: rest });
     window.addEventListener("scroll", onScroll, { passive: true });
-    planetMq.addEventListener("change", place);
+    const stopPlanetWatch = watchPlanetShown(scene, place);
     // After the first load's own work, so the panes have been hydrated.
     const start = window.requestIdleCallback
       ? window.requestIdleCallback(place, { timeout: 2000 })
@@ -265,7 +277,7 @@ export function SaturnStage({ children }: { children: ReactNode }) {
       sceneObserver.disconnect();
       stopWatching();
       window.removeEventListener("scroll", onScroll);
-      planetMq.removeEventListener("change", place);
+      stopPlanetWatch();
       window.clearTimeout(settle);
       if (window.cancelIdleCallback) window.cancelIdleCallback(start);
       else window.clearTimeout(start);
@@ -285,7 +297,7 @@ export function SaturnStage({ children }: { children: ReactNode }) {
     if (!scene || !box) return;
 
     const reducedMq = matchMedia("(prefers-reduced-motion: reduce)");
-    const tierMqs = [matchMedia(DESKTOP_MQ), matchMedia(PLANET_MQ)];
+    const tierMqs = [matchMedia(DESKTOP_MQ)];
     let attempt = 0;
     let tooSlow = false;
 
@@ -300,7 +312,7 @@ export function SaturnStage({ children }: { children: ReactNode }) {
 
     const sync = async () => {
       stop();
-      const tier = saturnTier();
+      const tier = saturnTier(scene);
       if (tooSlow || !tier) return;
       const mine = attempt;
       const { mountSaturn } = await import("@/components/saturn-webgl");
@@ -322,11 +334,13 @@ export function SaturnStage({ children }: { children: ReactNode }) {
       : window.setTimeout(() => void sync(), 600);
     const onChange = () => void sync();
     for (const mq of [reducedMq, ...tierMqs]) mq.addEventListener("change", onChange);
+    const stopPlanetWatch = watchPlanetShown(scene, onChange);
 
     return () => {
       if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
       else window.clearTimeout(idle);
       for (const mq of [reducedMq, ...tierMqs]) mq.removeEventListener("change", onChange);
+      stopPlanetWatch();
       stop();
     };
   }, []);

@@ -4,7 +4,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { DATA_ARRIVED } from "@/components/meteors";
-import { BRIGHT, DIM } from "@/components/night-sky";
+import { BRIGHT, DIM, isAnchor } from "@/components/sky-field";
+import { PANES, forEachReadBox } from "@/components/page-measure";
 
 // Two small responses from the sky, both decoration and both behind the glass.
 //
@@ -37,11 +38,6 @@ import { BRIGHT, DIM } from "@/components/night-sky";
 // runs a frame loop only while something is fading, then clears once and
 // stops. Under reduced motion none of it is started.
 
-// Bright stars eligible to start a constellation. A subset on purpose — seven
-// spread across the frame rather than all eighteen, so it stays an occasional
-// discovery rather than something every click in the margin sets off.
-const ANCHORS = new Set([0, 3, 5, 9, 10, 12, 15]);
-
 const GLOW_RADIUS = 110; // CSS px around the pointer
 const GLOW_RISE_MS = 90;
 const GLOW_FALL_MS = 650;
@@ -69,13 +65,10 @@ const MARGIN = 14;
 // band beside it counted as text. Section-heading rows are the one exception,
 // taken whole from their <h2>, so the hairline running to the meta is kept
 // clear as well.
-const MATERIALS =
-  ".panel,.panel-raised,.panel-rail,.panel-overlay,.panel-control,.panel-track,.panel-track-block,.panel-chip";
-const OBJECTS = 'img,svg,button,a,input,select,textarea,summary,[role="img"]';
 // A click whose target is any of these is an interaction with content, not
 // with the sky. Text is not listed: a block's target area is wider than its
 // text, so text is judged by the line-box rectangles instead.
-const NOT_SKY = `${MATERIALS},a,button,input,select,textarea,summary,label,[role]`;
+const NOT_SKY = `${PANES},a,button,input,select,textarea,summary,label,[role]`;
 
 // `bx`/`by` are the star's resting position; `x`/`y` add its depth layer's
 // current sway offset and are what every test and draw uses.
@@ -100,7 +93,7 @@ export function SkyInteraction() {
 
     const source = [
       ...DIM.map(([x, y, r]) => ({ x, y, r, depth: 0 as const, anchor: false })),
-      ...BRIGHT.map(([x, y, r], i) => ({ x, y, r, depth: 1 as const, anchor: ANCHORS.has(i) })),
+      ...BRIGHT.map(([x, y, r]) => ({ x, y, r, depth: 1 as const, anchor: isAnchor(x, y) })),
     ];
     let stars: Star[] = [];
     const peak = new Float32Array(source.length);
@@ -179,39 +172,18 @@ export function SkyInteraction() {
         rects.push({ l: b.left - MARGIN, t: b.top - MARGIN, r: b.right + MARGIN, b: b.bottom + MARGIN });
       };
 
-      for (const el of document.querySelectorAll(MATERIALS)) add(el.getBoundingClientRect());
+      for (const el of document.querySelectorAll(PANES)) add(el.getBoundingClientRect());
       // The planet's body (`saturn-scene.tsx`) is opaque and painted over this
       // canvas, so a star behind it is covered like one behind a panel.
       for (const el of document.querySelectorAll("[data-sky-occluder]")) add(el.getBoundingClientRect());
       for (const h of document.querySelectorAll("main h2")) {
-        if (!h.closest(MATERIALS) && h.parentElement) add(h.parentElement.getBoundingClientRect());
+        if (!h.closest(PANES) && h.parentElement) add(h.parentElement.getBoundingClientRect());
       }
 
       // Everything on the bare field, skipping each panel's subtree whole —
       // the panel's own box already covers it.
       const main = document.querySelector("main");
-      if (main) {
-        const range = document.createRange();
-        const walker = document.createTreeWalker(main, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-          acceptNode: (node) => {
-            if (node.nodeType === Node.TEXT_NODE) {
-              return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-            }
-            const el = node as Element;
-            if (el.matches(MATERIALS)) return NodeFilter.FILTER_REJECT;
-            if (el.matches(OBJECTS)) return NodeFilter.FILTER_ACCEPT;
-            return NodeFilter.FILTER_SKIP;
-          },
-        });
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-          if (n.nodeType === Node.TEXT_NODE) {
-            range.selectNodeContents(n);
-            for (const r of range.getClientRects()) add(r);
-          } else {
-            add((n as Element).getBoundingClientRect());
-          }
-        }
-      }
+      if (main) forEachReadBox(main, PANES, (box) => add(box));
 
       follow();
       for (const st of stars) {

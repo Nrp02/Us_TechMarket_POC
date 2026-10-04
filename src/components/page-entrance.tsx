@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { hydrated } from "@/components/page-measure";
+
 // One entrance per arrival, not two.
 //
 // A route change shows the route's `loading.tsx` skeleton the moment the link
@@ -98,7 +100,7 @@ export function PageEntrance() {
           // hydration mismatch and would play a first visit as a change.
           // It arrives on its own clock. (A block a navigation renders has
           // its fiber from the moment it is created.)
-          if (!Object.keys(block).some((key) => key.startsWith("__reactFiber"))) {
+          if (!hydrated(block)) {
             shown = sectionOf(location.pathname);
             skeleton = null;
             continue;
