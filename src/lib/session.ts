@@ -57,7 +57,7 @@ export async function newestSnapshotAt(symbol?: string): Promise<string | null> 
 
       if (symbol) query = query.eq("symbol", symbol);
 
-      return query.abortSignal(signal);
+      return query.abortSignal(signal).retry(false);
     },
   );
 
@@ -94,7 +94,7 @@ async function getSparklines(day: string): Promise<Map<string, number[]>> {
         .order("snapshot_at", { ascending: true })
         .order("symbol", { ascending: true })
         .range(start, end)
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
   );
 
   // The window can only straddle the boundary, never span two sessions, so the
@@ -120,7 +120,7 @@ async function readLiveTickers(
         .from("price_cache")
         .select("symbol, price, change, change_percent, volume, avg_volume, updated_at")
         .in("symbol", symbols)
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
     ),
     sparklines ? getSparklines(day) : new Map<string, number[]>(),
   ]);
@@ -182,7 +182,7 @@ export async function readDayTickers(symbols: string[], day: string): Promise<Ti
           .select("symbol, close, change, change_percent, volume, avg_volume")
           .in("symbol", symbols)
           .eq("trading_day", day)
-          .abortSignal(signal),
+          .abortSignal(signal).retry(false),
     ),
     readAllRows<{ symbol: string; price: number; volume: number | null; snapshot_at: string }>(
       "day-ticker-snapshots",
@@ -196,7 +196,7 @@ export async function readDayTickers(symbols: string[], day: string): Promise<Ti
           .order("snapshot_at", { ascending: true })
           .order("symbol", { ascending: true })
           .range(start, end)
-          .abortSignal(signal),
+          .abortSignal(signal).retry(false),
     ),
   ]);
 
@@ -283,7 +283,7 @@ export async function readPageSession(
 ): Promise<PageSession> {
   const [dates, latest, symbolLatest] = await Promise.all([
     readRows<{ day: string }>("activity-dates", (signal) =>
-      db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal)),
+      db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal).retry(false)),
     latestSessionDay(),
     symbol ? latestSessionDay(symbol) : Promise.resolve(null),
   ]);

@@ -158,3 +158,21 @@ test("a failed cached Session read is retried on the next request", async () => 
     assert.equal(recovered.trackedStocks.find((t) => t.symbol === "NVDA")?.price, 110);
   });
 });
+
+test("a failing intraday read on a page is attempted three times, not multiplied by the client's retries", async () => {
+  const original = globalThis.fetch;
+  const attempts: Record<string, number> = {};
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    const table = url.pathname.split("/").pop()!;
+    attempts[table] = (attempts[table] ?? 0) + 1;
+    if (table === "intraday_snapshots") return new Response(JSON.stringify({ message: "upstream timeout" }), { status: 503 });
+    return Response.json(tables[table] ?? [], { headers: { "content-range": `0-0/${(tables[table] ?? []).length}` } });
+  };
+  try {
+    await assert.rejects(readPageSession(["NVDA", "AMD"], "2026-09-25"), /newest-snapshot/);
+    assert.equal(attempts.intraday_snapshots, 3);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

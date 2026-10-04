@@ -156,7 +156,7 @@ async function getNewestNewsDayUncached(): Promise<string | null> {
         .select("published_at")
         .order("published_at", { ascending: false })
         .limit(1)
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
   );
 
   const newest = rows[0]?.published_at;
@@ -204,7 +204,7 @@ async function getNewsUncached(
       query = query.gte("published_at", from).lt("published_at", to);
     }
 
-    return query.abortSignal(signal);
+    return query.abortSignal(signal).retry(false);
   };
 
   // The retention floor is applied here rather than as a SQL bound, because it
@@ -270,7 +270,7 @@ async function getNewsAvailableDatesUncached(): Promise<string[]> {
     db
       .rpc("news_days", {}, { count: "exact" })
       .limit(1000)
-      .abortSignal(signal),
+      .abortSignal(signal).retry(false),
   );
 
   // Already DISTINCT and newest-first out of SQL, so the first row is the
@@ -411,7 +411,7 @@ async function getIntraday(
       .lt("snapshot_at", to)
       .order("snapshot_at", { ascending: true })
       .limit(1000)
-      .abortSignal(signal),
+      .abortSignal(signal).retry(false),
   );
 
   return rows
@@ -444,7 +444,7 @@ async function getSymbolNews(symbol: string, day: string): Promise<NewsItem[]> {
         .lt("published_at", to)
         .order("published_at", { ascending: false })
         .limit(1000)
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
   );
 
   return rows
@@ -462,7 +462,7 @@ async function getMarketStoryUncached(day: string): Promise<MarketStory | null> 
         .from("market_stories")
         .select("sections, generated_at")
         .eq("story_date", day)
-        .abortSignal(signal)
+        .abortSignal(signal).retry(false)
         .maybeSingle(),
   );
   return row ? { sections: row.sections, generatedAt: row.generated_at as string } : null;
@@ -526,7 +526,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
             .eq("symbol", symbol)
             .eq("trading_day", sessionDay)
             .order("event_at", { ascending: true })
-            .abortSignal(signal),
+            .abortSignal(signal).retry(false),
       ),
       // Bounded by the start of today's ET date, not by the current instant.
       // Earnings rows carry a time only so the date and the call sort in order
@@ -541,7 +541,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
             .eq("symbol", symbol)
             .gte("event_at", `${tradingDay()}T00:00:00Z`)
             .order("event_at", { ascending: true })
-            .abortSignal(signal),
+            .abortSignal(signal).retry(false),
       ),
       // Absent is a normal answer here — a stock the post-close job has not
       // reached yet has no row — so this is the one read whose empty result is
@@ -554,7 +554,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
             .select("sections, generated_at")
             .eq("symbol", symbol)
             .eq("story_date", sessionDay)
-            .abortSignal(signal)
+            .abortSignal(signal).retry(false)
             .maybeSingle(),
       ),
       // Absent is a normal answer here too — the same "job hasn't reached it
@@ -567,7 +567,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
             .select("summary, bullets, generated_at")
             .eq("symbol", symbol)
             .eq("summary_date", sessionDay)
-            .abortSignal(signal)
+            .abortSignal(signal).retry(false)
             .maybeSingle(),
       ),
       getDailyCloses(symbol, sessionDay),
