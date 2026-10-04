@@ -61,3 +61,7 @@ next-env.d.ts
 
 # Local-only scratchpad (issue tracker, audits, experiments) — never pushed.
 .scratch/
+
+# Local agent tooling
+.agents/
+.codex/
