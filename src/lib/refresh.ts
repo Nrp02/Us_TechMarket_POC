@@ -65,7 +65,7 @@ const DAILY_MACRO_SERIES: ReadonlySet<string> = new Set([FRED_SERIES.tenYearTrea
  */
 async function refreshMacroIndicators(): Promise<void> {
   const cached = await readRows<{ series_id: string; updated_at: string }>("refresh-macro", (signal) =>
-    db.from("macro_indicators").select("series_id, updated_at").abortSignal(signal),
+    db.from("macro_indicators").select("series_id, updated_at").abortSignal(signal).retry(false),
   );
   const staleCutoff = (seriesId: string) => Date.now() - (DAILY_MACRO_SERIES.has(seriesId)
     ? DAILY_MACRO_STALE_HOURS * 60 * 60 * 1000
@@ -133,7 +133,7 @@ export async function refreshMarketData(): Promise<RefreshResult> {
   // A failed read throws rather than reading as "nothing cached", which would
   // re-fetch every symbol's metrics and fundamentals in one tick.
   const cached = await readRows<{ symbol: string; avg_volume: number | null }>("refresh-avg-volume", (signal) =>
-    db.from("price_cache").select("symbol, avg_volume").abortSignal(signal),
+    db.from("price_cache").select("symbol, avg_volume").abortSignal(signal).retry(false),
   );
   const knownAvg = new Map(cached.map((r) => [r.symbol, r.avg_volume]));
 
@@ -141,7 +141,7 @@ export async function refreshMarketData(): Promise<RefreshResult> {
   // fetch only if needed" shape as knownAvg above — a warm run makes zero
   // fundamentals-related upstream calls once every tracked stock has a fresh row.
   const cachedFundamentals = await readRows<{ symbol: string; updated_at: string }>("refresh-fundamentals", (signal) =>
-    db.from("fundamentals").select("symbol, updated_at").abortSignal(signal),
+    db.from("fundamentals").select("symbol, updated_at").abortSignal(signal).retry(false),
   );
   const staleCutoff = Date.now() - FUNDAMENTALS_STALE_DAYS * 24 * 60 * 60 * 1000;
   const freshFundamentals = new Set(

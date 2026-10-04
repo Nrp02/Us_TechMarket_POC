@@ -345,7 +345,7 @@ export async function generateDailySummaries(
   // Through readRows, not bare `{ data }`: a failed read must throw rather
   // than arrive as an empty done-set (re-spending AI calls on finished stocks).
   const doneRows = await readRows<{ symbol: string }>("daily-summary-done", (signal) =>
-    db.from("daily_summaries").select("symbol").eq("summary_date", day).abortSignal(signal),
+    db.from("daily_summaries").select("symbol").eq("summary_date", day).abortSignal(signal).retry(false),
   );
   const done = new Set(doneRows.map((r) => r.symbol));
 

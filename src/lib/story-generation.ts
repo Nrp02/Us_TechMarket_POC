@@ -194,7 +194,7 @@ async function loadTenYearYield(day: string): Promise<TenYearYield | null> {
   const row = await readMaybeOne<{ latest_date: string; latest_value: number | null; prior_date: string | null; prior_value: number | null }>(
     "story-dgs10", (signal) => db.from("macro_indicators")
       .select("latest_date, latest_value, prior_date, prior_value")
-      .eq("series_id", FRED_SERIES.tenYearTreasury).abortSignal(signal).maybeSingle());
+      .eq("series_id", FRED_SERIES.tenYearTreasury).abortSignal(signal).retry(false).maybeSingle());
   if (!row || row.latest_value == null || row.latest_date > day) return null;
   return { latestDate: row.latest_date, latestValue: Number(row.latest_value),
     priorDate: row.prior_date, priorValue: row.prior_value == null ? null : Number(row.prior_value) };
@@ -207,7 +207,7 @@ async function loadFilings(symbol: string, day: string): Promise<StorySecFiling[
       .select("form, item_codes")
       .eq("symbol", symbol)
       .eq("filing_date", day)
-      .abortSignal(signal)
+      .abortSignal(signal).retry(false)
       .retry(false),
   );
   return rows.map((row) => ({ form: row.form, itemCodes: row.item_codes }));
@@ -318,7 +318,7 @@ export async function generateStories(day?: string): Promise<StoryGenerationResu
   // Through readRows, not bare `{ data }`: a failed read must throw rather
   // than arrive as an empty done-set (re-spending AI calls on finished stocks).
   const doneRows = await readRows<{ symbol: string }>("story-done", (signal) =>
-    db.from("stories").select("symbol").eq("story_date", session.day).abortSignal(signal),
+    db.from("stories").select("symbol").eq("story_date", session.day).abortSignal(signal).retry(false),
   );
   const done = new Set(doneRows.map((r) => r.symbol));
   const tickers = session.isLive ? session.tickers : new Map<string, Ticker>();

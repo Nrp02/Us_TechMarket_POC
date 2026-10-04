@@ -54,7 +54,7 @@ export async function loadDayDataBatch(
         .gte("snapshot_at", from)
         .lt("snapshot_at", to)
         .order("snapshot_at", { ascending: true })
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
     ),
     readDayNews({ symbols }, day),
   ]);

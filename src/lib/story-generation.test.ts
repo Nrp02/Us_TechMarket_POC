@@ -130,3 +130,31 @@ test("a transient sec_filings failure is retried through the read seam, and no s
     assert.equal(modelCalls, 0);
   } finally { globalThis.fetch = originalFetch; Date.now = originalNow; }
 });
+
+test("the done-stories read is attempted once per budget slot, not multiplied by the client's own retries", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let doneAttempts = 0;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.groq.com") throw new Error("no model call expected");
+    const table = url.pathname.split("/").pop()!;
+    if (table === "stories") {
+      doneAttempts++;
+      return new Response(JSON.stringify({ message: "upstream timeout" }), { status: 503 });
+    }
+    let rows: object[] = [];
+    if (table === "intraday_snapshots") rows = [{ snapshot_at: "2026-09-25T20:00:00Z" }];
+    if (table === "price_cache") rows = TOP_20_SYMBOLS.map((symbol) => ({
+      symbol, price: 100, change: 1, change_percent: 1, volume: null, avg_volume: null, updated_at: "2026-09-25T20:15:00Z",
+    }));
+    return new Response(JSON.stringify(rows), { headers: {
+      "content-type": "application/json", "content-range": `0-${Math.max(rows.length - 1, 0)}/${rows.length}`,
+    } });
+  };
+  try {
+    Date.now = () => 0;
+    await assert.rejects(generateStories("2026-09-25"), /story-done/);
+    assert.equal(doneAttempts, 3);
+  } finally { globalThis.fetch = originalFetch; Date.now = originalNow; }
+});

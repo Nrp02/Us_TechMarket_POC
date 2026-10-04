@@ -102,7 +102,7 @@ export async function ingestNews(): Promise<IngestResult> {
     db.from("news")
       .select("id, finnhub_id, related_symbols, news_summaries(summary)")
       .in("finnhub_id", articles.map((a) => a.finnhubId))
-      .abortSignal(signal),
+      .abortSignal(signal).retry(false),
   );
 
   const newsIdByFinnhubId = new Map<number, number>();

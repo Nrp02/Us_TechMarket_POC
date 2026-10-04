@@ -30,7 +30,7 @@ export async function readDailyCloses(label: string, symbols: readonly string[],
         .order("symbol", { ascending: true })
         .order("trading_day", { ascending: true })
         .range(start, end)
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
   );
   return rows.map((row) => ({
     symbol: row.symbol,

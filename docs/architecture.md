@@ -70,7 +70,7 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 | Module | Role |
 |---|---|
 | `supabase.ts` | server client (throws at import without env — keep testable logic out of modules that import it) |
-| `db-read.ts` | every read: timeout, retry with fresh signal, throws on error/truncation |
+| `db-read.ts` | every read: timeout, retry with fresh signal, throws on error/truncation. Builders add `.retry(false)` so postgrest-js does not retry underneath it |
 | `queries.ts` | all page reads, cached: `getMarketSession`, `getActivity`, `getSessionStamp`, `getNews`, `getNewsTeaser`, `getNewsDates` |
 | `session.ts` / `day-ticker.ts` | `readPageSession` resolves dates and reads matching figures/provenance together; a stock missing the newest Session defaults to its own last Session and reads historical peer figures |
 | `activity-date.ts`, `news-date.ts` | date labels/options and date normalization; Session callers consume the resolved date from queries |
@@ -106,12 +106,12 @@ Shell (`app/layout.tsx`): `top-bar`, `keyboard-shortcuts`, `session-marker`, `ch
 | `macro_indicators` | refresh | story + market-story generation |
 | `news`, `news_summaries`, `news_evidence` | news-ingest | queries, day-news, story-business-context |
 | `events` | daily-summary | queries |
-| `timeline_events` | timeline-rebuild | queries |
+| `timeline_events` | timeline-rebuild via the `replace_timeline_events` RPC (migration 0023, one transaction per day) | queries |
 | `daily_summaries` | daily-summary | queries |
 | `stories` / `market_stories` | story / market-story generation | queries |
 | `news_days()`, `activity_days()` RPCs | migrations 0009, 0015 | queries |
 
-Migrations: `supabase/migrations/0001…0022` (0022 retires the analysis-attempt table), applied with `scripts/migrate.mts`. `watchlist` was dropped in `0017`.
+Migrations: `supabase/migrations/0001…0023` (0022 retires the analysis-attempt table; 0023 adds the timeline replace RPC and is not yet applied to the shared database), applied with `scripts/migrate.mts`. `watchlist` was dropped in `0017`.
 
 ## Scripts
 

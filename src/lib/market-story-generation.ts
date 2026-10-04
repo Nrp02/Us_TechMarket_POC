@@ -210,7 +210,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
         .from("market_stories")
         .select("story_date")
         .eq("story_date", resolvedDay)
-        .abortSignal(signal)
+        .abortSignal(signal).retry(false)
         .maybeSingle(),
   );
   if (existing) return { status: "already_done" };
@@ -231,7 +231,7 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
       db
         .from("macro_indicators")
         .select("series_id, latest_date, latest_value, prior_date, prior_value")
-        .abortSignal(signal),
+        .abortSignal(signal).retry(false),
     ),
     readDayNews("general", resolvedDay),
     readDailyCloses("market-story:index-closes", INDEX_SYMBOLS, resolvedDay),

@@ -70,3 +70,21 @@ test("a failed read of finished summaries throws instead of treating every stock
     assert.equal(geminiCalls(), 0);
   },
 ));
+
+test("the done-summaries read is attempted once per budget slot, not multiplied by the client's own retries", async () => {
+  let doneAttempts = 0;
+  await withFakeNetwork(
+    {
+      ...liveRoutes,
+      daily_summaries: () => {
+        doneAttempts++;
+        return new Response(JSON.stringify({ message: "upstream timeout" }), { status: 503 });
+      },
+    },
+    async (geminiCalls) => {
+      await assert.rejects(generateDailySummaries(DAY), /daily-summary-done/);
+      assert.equal(geminiCalls(), 0);
+    },
+  )();
+  assert.equal(doneAttempts, 3);
+});
