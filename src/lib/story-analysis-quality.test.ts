@@ -57,10 +57,9 @@ test("a nonzero named move is never flat", () => {
   assert.doesNotThrow(() => validateNoFlatMoves({ comparison: "AMD rose while the index was flat." }, moves));
   assert.throws(() => validateNoFlatMoves({ comparison: "AMD (+0.22%) was essentially unchanged." }, moves));
 });
-test("feedback lands between the instructions and the input", () => {
+test("the structured input follows the instructions", () => {
   const prompt = { instructions: "Write it.\n", input: { a: 1 } };
   assert.equal(renderAnalysisPrompt(prompt), 'Write it.\n\nInput:\n{"a":1}');
-  assert.equal(renderAnalysisPrompt(prompt, "Fix X.\n\n"), 'Write it.\n\nFix X.\n\nInput:\n{"a":1}');
 });
 test("the trend section must state direction, signed net change and swing age", () => {
   const trend = { direction: "downtrend", windowChangePercent: -5.03, reversalDaysAgo: 3 } as const;

@@ -1,4 +1,4 @@
-import { generateValidatedAnalysis } from "@/lib/story-analysis-call";
+import { generateAnalysis } from "@/lib/story-analysis-call";
 import { type AnalysisPrompt, analysisSchema, normalizeDashes, collectIssues, requireSections, selectTopArticles, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
 import { MARKET_SECTION_KEYS, type MarketStorySections } from "@/lib/story-sections";
 import { readMaybeOne, readRows } from "@/lib/db-read";
@@ -285,14 +285,14 @@ export async function generateMarketStory(day?: string): Promise<MarketStoryResu
   }
 }
 
-/** Shared acceptance path for scheduled generation and historical replay. */
+/** Generate the narrative and attach locally computed warnings. */
 export async function generateMarketStorySections(input: MarketStoryInput): Promise<MarketStorySections> {
   const prompt = buildMarketStoryPrompt(input);
   const schema = analysisSchema(MARKET_SECTION_KEYS, { descriptions: MARKET_SECTION_DESCRIPTIONS });
   // Only a missing section is rejected (retried next tick); every other check
   // is recorded with the published story instead — see StoryChecks.
-  const data = await generateValidatedAnalysis<GroqModel>({ kind: "market", day: input.day }, prompt, schema,
-    (candidate) => requireSections(candidate, MARKET_SECTION_KEYS, "Market Story missing section(s)"));
+  const data = await generateAnalysis<GroqModel>(prompt, schema);
+  requireSections(data, MARKET_SECTION_KEYS, "Market Story missing section(s)");
   const checks = {
     shown: collectIssues([
       () => validatePublishedFigures(data, prompt.input),

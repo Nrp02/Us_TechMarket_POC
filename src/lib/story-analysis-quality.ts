@@ -6,13 +6,12 @@ import type { RecentTrend } from "./trend-detection.ts";
 
 /**
  * A prompt as its two halves. The structured input is kept apart from the
- * instructions so the checks can read the supplied figures directly, and so
- * retry feedback always lands just before the input.
+ * instructions so the checks read the same supplied evidence as the model.
  */
 export type AnalysisPrompt = { instructions: string; input: unknown };
 
-export function renderAnalysisPrompt({ instructions, input }: AnalysisPrompt, feedback = ""): string {
-  return `${instructions}\n${feedback}Input:\n${JSON.stringify(input)}`;
+export function renderAnalysisPrompt({ instructions, input }: AnalysisPrompt): string {
+  return `${instructions}\nInput:\n${JSON.stringify(input)}`;
 }
 
 /** Output shape is constrained; `descriptions` narrows what a section may cover. */

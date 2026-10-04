@@ -6,7 +6,7 @@ import { generateStories } from "@/lib/story-generation";
 
 // End-of-day Today's Story generation, on the same schedule window as
 // /api/daily-summary (see scripts/setup-cron.mts) but a second, independent
-// cron entry — each tick handles one stock (generation plus evidence review),
+// cron entry — each tick handles one stock generation call,
 // against the Gemini job's up-to-5-stock batch.
 //
 // Market Story's one-call-a-day generation rides this same tick rather than
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     }
     const stories = await generateStories(day);
 
-    // Keep one narrative attempt per request: generation and review share the
+    // Keep one narrative attempt per request: generation uses the
     // 60s wall-time budget. Once stocks are done, market uses a later tick.
     if (stories.generated.length || stories.failed.length || stories.skippedRateLimited.length) {
       return NextResponse.json({ ...stories, marketStory: { status: "deferred" } });

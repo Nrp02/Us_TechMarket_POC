@@ -1,4 +1,4 @@
-import { generateValidatedAnalysis, stockAttemptTimes } from "@/lib/story-analysis-call";
+import { generateAnalysis } from "@/lib/story-analysis-call";
 import { type AnalysisPrompt, analysisSchema, normalizeDashes, collectIssues, requireSections, selectTopArticles, validateNoFlatMoves, validatePublishedFigures, validateTrendStated } from "@/lib/story-analysis-quality";
 import { STOCK_SECTION_KEYS, type StorySections } from "@/lib/story-sections";
 import { loadBusinessContext } from "@/lib/story-business-context";
@@ -25,7 +25,7 @@ import { readSessionTickers, type Ticker } from "@/lib/session";
 // (tokens/minute) makes a per-stock call viable where Gemini's per-day request
 // cap did not — see CLAUDE.md's AI call budget.
 
-/** One stock call per tick; the five-minute schedule leaves review/retry headroom for 20 names. */
+/** One stock call per tick; the five-minute schedule leaves headroom for 20 names. */
 const STOCKS_PER_RUN = 1;
 const SECTOR_SYMBOL = "XLK";
 const MARKET_SYMBOL = "SPY";
@@ -214,15 +214,8 @@ async function loadFilings(symbol: string, day: string): Promise<StorySecFiling[
   }));
 }
 
-/**
- * Exported (was module-private) so a one-off manual regeneration script can
- * call the exact same pipeline `generateStories` uses per symbol, without
- * going through its price-freshness gate — useful for re-running a single
- * stock whose stored story came out thin/degenerate without touching the
- * others. Not called from any route; `generateStories` is still the only
- * scheduled entry point.
- */
-export async function generateOneStory(
+/** Assemble and publish one stock for the scheduled job. */
+async function generateOneStory(
   symbol: string,
   day: string,
   tickers: Map<string, Ticker>,
@@ -280,16 +273,15 @@ export async function generateOneStory(
   if (error) throw new Error(`stories upsert for ${symbol}: ${error.message}`);
 }
 
-/** The same narrative call for scheduled generation and reviewed historical replay. */
+/** Generate the narrative and attach locally computed warnings. */
 export async function generateStorySections(storyInput: StoryInput): Promise<StorySections> {
   const prompt = buildStoryPrompt(storyInput);
   const picks = selectStockNews(storyInput);
   const schema = analysisSchema(STOCK_SECTION_KEYS, { headlineSources: [...new Set(picks.map(({ item }) => item.headline))] });
-  const data = await generateValidatedAnalysis<GroqModel>(
-    { kind: "stock", day: storyInput.sessionDay, symbol: storyInput.symbol }, prompt, schema,
-    // Only a missing section is rejected (retried next tick). Every other check
-    // is recorded with the published story instead — see StoryChecks.
-    (candidate) => requireSections(candidate as unknown as Record<string, unknown>, STOCK_SECTION_KEYS, "Missing analytical sections", true));
+  const data = await generateAnalysis<GroqModel>(prompt, schema);
+  // Only missing sections stay pending for a later tick; all other checks
+  // are published with the story and never trigger another model call.
+  requireSections(data as unknown as Record<string, unknown>, STOCK_SECTION_KEYS, "Missing analytical sections", true);
   const result = data as unknown as Record<string, unknown>;
   const checks = {
     shown: collectIssues([
@@ -317,7 +309,7 @@ export async function generateStorySections(storyInput: StoryInput): Promise<Sto
  * `day` exists for manual triggers, mirroring daily-summary.ts. Omitted, it is
  * the newest session the snapshots record. Only the live session is written:
  * a past day's relative volume and peers would have to be rebuilt from
- * history, which is what scripts/backfill-story-analysis.mts does instead.
+ * history; this scheduled job only writes the live session.
  */
 export async function generateStories(day?: string): Promise<StoryGenerationResult> {
   const session = await readSessionTickers(
@@ -350,10 +342,11 @@ export async function generateStories(day?: string): Promise<StoryGenerationResu
     active.push(symbol);
   }
 
-  // A rejected first symbol must not consume every tick and starve other names.
-  const attemptedAt = await stockAttemptTimes(session.day);
-  const batch = active.filter((symbol) => !done.has(symbol))
-    .sort((a, b) => (attemptedAt.get(a) ?? "").localeCompare(attemptedAt.get(b) ?? ""))
+  // Rotate the starting stock each five-minute cron slot. A failed stock
+  // cannot monopolize later ticks, and no attempt ledger or feedback is needed.
+  const start = Math.floor(Date.now() / (5 * 60_000)) % TOP_20_SYMBOLS.length;
+  const order = [...TOP_20_SYMBOLS.slice(start), ...TOP_20_SYMBOLS.slice(0, start)];
+  const batch = order.filter((symbol) => active.includes(symbol) && !done.has(symbol))
     .slice(0, STOCKS_PER_RUN);
 
   for (const symbol of batch) {
