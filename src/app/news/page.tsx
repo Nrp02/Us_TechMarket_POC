@@ -7,7 +7,7 @@ import { formatDay } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
 import type { NewsCategory } from "@/lib/news-category";
 import { resolveNewsDate } from "@/lib/news-date";
-import { getNews, getNewsDates } from "@/lib/queries";
+import { getNews, getNewsDates } from "@/lib/queries-news";
 import { SECTORS } from "@/lib/symbols";
 
 // The one route still inheriting the layout's bare product name, so a News tab

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { SectionHeading } from "@/components/section-heading";
-import type { NewsItem } from "@/lib/queries";
+import type { NewsItem } from "@/lib/queries-news";
 
 export function NewsTeaser({ items }: { items: NewsItem[] }) {
   return (

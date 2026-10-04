@@ -53,7 +53,7 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 
 **News** — `news-ingest.ts`: fetch → store every article (uncapped) → `news-select.ts` picks ≤50 without a blurb → one OpenRouter call → `news-summary-response.ts` validates the whole batch before persisting. Relevance matching (`mentionsSymbol`) is in `symbols.ts`.
 
-**Daily Summary** — `daily-summary.ts`: loads the day with `day-data.ts` (one batched read), builds `timeline.ts` events, one Gemini call per 5 stocks, `significance.ts` for the badge.
+**Daily Summary** — `daily-summary.ts`: loads the day with `day-data.ts` (one batched read), builds `timeline.ts` events, one Gemini call per 5 stocks; prompt, schema and input shaping live in `daily-summary-prompt.ts`; `significance.ts` for the badge.
 
 **Today's Story** (per stock, Top 20) — `story-generation.ts` orchestrates:
 - input: `story-input.ts` composes pure engines — `peer-comparison.ts`, `movement-classification.ts`, `volatility.ts`, `trend-detection.ts`, `period-performance.ts`, `fundamentals.ts`, `significance.ts`
@@ -71,7 +71,9 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 |---|---|
 | `supabase.ts` | server client (throws at import without env — keep testable logic out of modules that import it) |
 | `db-read.ts` | every read: timeout, retry with fresh signal, throws on error/truncation. Builders add `.retry(false)` so postgrest-js does not retry underneath it |
-| `queries.ts` | all page reads, cached: `getMarketSession`, `getActivity`, `getSessionStamp`, `getNews`, `getNewsTeaser`, `getNewsDates` |
+| `queries.ts` | all page reads, cached: `getMarketSession`, `getActivity`, `getSessionStamp` |
+| `queries-news.ts` | news reads, cached: `getNews`, `getNewsTeaser`, `getNewsDates`, `NewsItem` |
+| `cache-policy.ts` | the shared 60s read-cache TTL and the rule that a failed read must throw |
 | `session.ts` / `day-ticker.ts` | `readPageSession` resolves dates and reads matching figures/provenance together; a stock missing the newest Session defaults to its own last Session and reads historical peer figures |
 | `activity-date.ts`, `news-date.ts` | date labels/options and date normalization; Session callers consume the resolved date from queries |
 | `news-category.ts` | Stock vs Market tab, sector filters |

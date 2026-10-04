@@ -1,5 +1,5 @@
 import { NewsThumbnail } from "@/components/news-thumbnail";
-import type { NewsItem } from "@/lib/queries";
+import type { NewsItem } from "@/lib/queries-news";
 
 function timeAgo(iso: string): string {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);

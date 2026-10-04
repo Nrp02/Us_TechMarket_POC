@@ -6,7 +6,8 @@ import { SessionDigest } from "@/components/session-digest";
 import { activityDateLabel, buildActivityDateOptions } from "@/lib/activity-date";
 import { formatDayLong } from "@/lib/format";
 import { tradingDay } from "@/lib/market";
-import { getMarketSession, getNewsTeaser } from "@/lib/queries";
+import { getNewsTeaser } from "@/lib/queries-news";
+import { getMarketSession } from "@/lib/queries";
 
 // The Market page — whole-market overview, replacing the old personalized
 // Home. There is no separate full-table page: the "Stocks" nav item routes

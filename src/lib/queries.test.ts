@@ -6,7 +6,7 @@ Object.assign(globalThis, { AsyncLocalStorage });
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://queries-test.invalid";
 process.env.SUPABASE_SECRET_KEY = "test-key";
-const { getNewsDates } = await import("./queries.ts");
+const { getNewsDates } = await import("./queries-news.ts");
 
 test("a failed news-dates read throws and is not cached, so the next request reads again", async () => {
   const runtime = globalThis as typeof globalThis & { __incrementalCache?: unknown };
