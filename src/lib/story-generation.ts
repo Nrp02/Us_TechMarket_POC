@@ -189,7 +189,6 @@ async function loadDailyCloses(symbol: string, day: string): Promise<StoryDailyC
   return rows.map(({ tradingDay, close, changePercent }) => ({ tradingDay, close, changePercent }));
 }
 
-/** This symbol's own Form 8-K filing(s) dated today, if any (see migration 0013). */
 /** FRED DGS10 as stored by refresh.ts; an observation dated after the session is never used. */
 async function loadTenYearYield(day: string): Promise<TenYearYield | null> {
   const row = await readMaybeOne<{ latest_date: string; latest_value: number | null; prior_date: string | null; prior_value: number | null }>(
@@ -201,17 +200,17 @@ async function loadTenYearYield(day: string): Promise<TenYearYield | null> {
     priorDate: row.prior_date, priorValue: row.prior_value == null ? null : Number(row.prior_value) };
 }
 
+/** This symbol's own Form 8-K filing(s) dated today, if any (see migration 0013). */
 async function loadFilings(symbol: string, day: string): Promise<StorySecFiling[]> {
-  const { data, error } = await db
-    .from("sec_filings")
-    .select("form, item_codes")
-    .eq("symbol", symbol)
-    .eq("filing_date", day);
-  if (error) throw new Error(`sec_filings read for ${symbol}: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    form: row.form as string,
-    itemCodes: row.item_codes as string,
-  }));
+  const rows = await readRows<{ form: string; item_codes: string }>(`sec_filings:${symbol}`, (signal) =>
+    db.from("sec_filings")
+      .select("form, item_codes")
+      .eq("symbol", symbol)
+      .eq("filing_date", day)
+      .abortSignal(signal)
+      .retry(false),
+  );
+  return rows.map((row) => ({ form: row.form, itemCodes: row.item_codes }));
 }
 
 /** Assemble and publish one stock for the scheduled job. */

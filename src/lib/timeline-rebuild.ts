@@ -11,7 +11,7 @@ import { buildTimeline } from "@/lib/timeline";
 // passes it in rather than reading it twice). Rebuilding is free of AI and
 // upstream calls, which is what makes running it repeatedly reasonable.
 
-export type TimelineRow = {
+export type TimelineEventRecord = {
   symbol: string;
   trading_day: string;
   event_at: string;
@@ -24,7 +24,7 @@ export function timelineRowsFor(
   symbol: string,
   day: string,
   rows: ReturnType<typeof buildTimeline>,
-): TimelineRow[] {
+): TimelineEventRecord[] {
   return rows.map((r) => ({
     symbol,
     trading_day: day,
@@ -36,31 +36,26 @@ export function timelineRowsFor(
 }
 
 /**
- * Deletes and re-inserts every symbol's rows for `day` in one round trip each,
- * rather than one delete + one insert per symbol. Deleted and re-inserted
+ * Replaces every symbol's rows for `day` in one database call
+ * (replace_timeline_events, migration 0023), so no reader sees a half-written day. Replaced
  * rather than upserted: a rebuild may drop a row (a flat day loses its
  * high/low pair), and an upsert alone would leave the stale one behind.
  */
 export async function writeTimelines(
   symbols: string[],
   day: string,
-  rows: TimelineRow[],
+  rows: TimelineEventRecord[],
 ) {
   // Nothing to write means nothing to clear: wiping first and failing to insert
   // would leave the page with no timeline where it previously had a good one.
   if (!symbols.length) return;
 
-  const { error: deleteError } = await db
-    .from("timeline_events")
-    .delete()
-    .in("symbol", symbols)
-    .eq("trading_day", day);
-  if (deleteError) throw new Error(`timeline_events delete: ${deleteError.message}`);
-
-  if (rows.length) {
-    const { error } = await db.from("timeline_events").insert(rows);
-    if (error) throw new Error(`timeline_events insert: ${error.message}`);
-  }
+  const { error } = await db.rpc("replace_timeline_events", {
+    p_symbols: symbols,
+    p_day: day,
+    p_rows: rows,
+  });
+  if (error) throw new Error(`timeline_events replace: ${error.message}`);
 }
 
 /**
@@ -88,7 +83,7 @@ export async function rebuildTimelines(
   const skipped: string[] = [];
   const failed: string[] = [...truncated];
   const symbolsToWrite: string[] = [];
-  const rows: TimelineRow[] = [];
+  const rows: TimelineEventRecord[] = [];
 
   for (const symbol of symbols) {
     if (options.skip?.(symbol)) {

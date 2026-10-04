@@ -13,6 +13,23 @@ export function resolveActivityDay(
   return requested && availableDates.includes(requested) ? requested : undefined;
 }
 
+/**
+ * Which Session a page shows. `symbolLatest` is the stock's own last Session,
+ * used when the stock is missing the newest one; `isHistorical` means the figures
+ * come from stored closes rather than the live quote.
+ */
+export function resolvePageDay(input: {
+  requestedDate: string | undefined;
+  availableDates: string[];
+  symbolLatest: string | null;
+  latest: string | null;
+  today: string;
+}): { day: string; defaultDay: string; isHistorical: boolean } {
+  const defaultDay = input.symbolLatest ?? input.latest ?? input.today;
+  const day = resolveActivityDay(input.requestedDate, input.availableDates) ?? defaultDay;
+  return { day, defaultDay, isHistorical: input.latest != null && day !== input.latest };
+}
+
 export function buildActivityDateOptions(
   availableDates: string[],
   currentDay: string,

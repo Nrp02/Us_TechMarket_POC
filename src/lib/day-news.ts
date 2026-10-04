@@ -22,7 +22,10 @@ export type DayNewsItem = {
 /** Articles tagged with any of `symbols`, the general feed (no tickers), or every article. */
 export type DayNewsFilter = { symbols: readonly string[] } | "general" | "all";
 
-type Row = {
+export const NEWS_WITH_EXCERPT_SELECT =
+  "headline, source_url, published_at, related_symbols, news_summaries(summary), news_evidence(source_text)";
+
+export type NewsWithExcerptRow = {
   headline: string;
   source_url: string;
   published_at: string;
@@ -31,14 +34,26 @@ type Row = {
   news_evidence: unknown;
 };
 
+/** news_id is the primary key of both embedded tables, so PostgREST embeds a single object. */
+export function toNewsItem(row: NewsWithExcerptRow): DayNewsItem {
+  return {
+    headline: row.headline,
+    sourceUrl: row.source_url,
+    publishedAt: row.published_at,
+    relatedSymbols: row.related_symbols ?? [],
+    summary: (row.news_summaries as { summary?: string } | null)?.summary ?? null,
+    sourceText: (row.news_evidence as { source_text?: string } | null)?.source_text ?? null,
+  };
+}
+
 /** Newest first. Throws on a failed or incomplete read rather than returning a short day. */
 export async function readDayNews(filter: DayNewsFilter, day: string): Promise<DayNewsItem[]> {
   const { from, to } = dayWindow(day);
   const label = `day-news:${day}:${filter === "all" || filter === "general" ? filter : filter.symbols.join(",")}`;
-  const rows = await readAllRows<Row>(label, (signal, start, end) => {
+  const rows = await readAllRows<NewsWithExcerptRow>(label, (signal, start, end) => {
     let query = db
       .from("news")
-      .select("headline, source_url, published_at, related_symbols, news_summaries(summary), news_evidence(source_text)", { count: "exact" });
+      .select(NEWS_WITH_EXCERPT_SELECT, { count: "exact" });
     if (filter === "general") query = query.eq("related_symbols", "{}");
     else if (filter !== "all") query = query.overlaps("related_symbols", [...filter.symbols]);
     return query
@@ -53,14 +68,5 @@ export async function readDayNews(filter: DayNewsFilter, day: string): Promise<D
 
   return rows
     .filter((row) => tradingDay(new Date(row.published_at)) === day)
-    .map((row) => ({
-      headline: row.headline,
-      sourceUrl: row.source_url,
-      publishedAt: row.published_at,
-      relatedSymbols: row.related_symbols ?? [],
-      // news_id is the primary key of both embedded tables, so PostgREST embeds
-      // a single object even though the client's inferred type says array.
-      summary: (row.news_summaries as { summary?: string } | null)?.summary ?? null,
-      sourceText: (row.news_evidence as { source_text?: string } | null)?.source_text ?? null,
-    }));
+    .map(toNewsItem);
 }

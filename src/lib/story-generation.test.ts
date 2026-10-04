@@ -95,3 +95,38 @@ test("repeatedly failing stocks do not starve the remaining stocks across cron s
     assert.deepEqual(reached, new Set(TOP_20_SYMBOLS));
   } finally { globalThis.fetch = originalFetch; Date.now = originalNow; }
 });
+
+test("a transient sec_filings failure is retried through the read seam, and no story is drafted without it", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let modelCalls = 0;
+  let secAttempts = 0;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.groq.com") {
+      modelCalls++;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] }));
+    }
+    const table = url.pathname.split("/").pop()!;
+    if (table === "sec_filings") {
+      secAttempts++;
+      return new Response(JSON.stringify({ message: "upstream timeout" }), { status: 503 });
+    }
+    let rows: object[] = [];
+    if (table === "intraday_snapshots") rows = [{ snapshot_at: "2026-09-25T20:00:00Z" }];
+    if (table === "price_cache") rows = TOP_20_SYMBOLS.map((symbol) => ({
+      symbol, price: 100, change: 1, change_percent: 1, volume: null, avg_volume: null, updated_at: "2026-09-25T20:15:00Z",
+    }));
+    return new Response(JSON.stringify(rows), { headers: {
+      "content-type": "application/json", "content-range": `0-${Math.max(rows.length - 1, 0)}/${rows.length}`,
+    } });
+  };
+  try {
+    Date.now = () => 0;
+    const result = await generateStories("2026-09-25");
+    assert.equal(result.failed.length, 1);
+    assert.match(result.failed[0], /sec_filings/);
+    assert.equal(secAttempts, 3, "the filings read gets the shared retry budget, not a single attempt");
+    assert.equal(modelCalls, 0);
+  } finally { globalThis.fetch = originalFetch; Date.now = originalNow; }
+});

@@ -74,3 +74,15 @@ test("symbol, general and whole-day filters reach the query", async () => {
   assert.equal(all[0].get("related_symbols"), null);
   assert.match(all[0].get("order") ?? "", /^published_at\.desc/);
 });
+
+test("the shared news row maps an absent blurb, excerpt or ticker list without inventing one", async () => {
+  const { toNewsItem } = await import("./day-news.ts");
+  const item = toNewsItem({
+    headline: "h", source_url: "https://example.com/x", published_at: "2026-09-25T15:00:00Z",
+    related_symbols: null, news_summaries: null, news_evidence: { source_text: "excerpt" },
+  });
+  assert.deepEqual(item, {
+    headline: "h", sourceUrl: "https://example.com/x", publishedAt: "2026-09-25T15:00:00Z",
+    relatedSymbols: [], summary: null, sourceText: "excerpt",
+  });
+});

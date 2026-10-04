@@ -7,7 +7,7 @@
 // the clock in one place and from the data in another, and gated freshness on
 // the calendar date a row was written — which a forced weekend refresh defeats.
 
-import { resolveActivityDay } from "@/lib/activity-date";
+import { resolvePageDay } from "@/lib/activity-date";
 import { readAllRows, readRows } from "@/lib/db-read";
 import { buildDayTicker } from "@/lib/day-ticker";
 import { dayWindow, sessionDayTimes, tradingDay } from "@/lib/market";
@@ -289,11 +289,11 @@ export async function readPageSession(
   ]);
   // Retention cleanup runs daily; bound the picker even before cleanup runs.
   const availableDates = dates.map((row) => row.day).slice(0, 7);
-  const defaultDay = symbolLatest ?? latest ?? tradingDay();
-  const day = resolveActivityDay(requestedDate, availableDates) ?? defaultDay;
+  const { day, defaultDay, isHistorical } = resolvePageDay({
+    requestedDate, availableDates, symbolLatest, latest, today: tradingDay(),
+  });
   // A symbol missing the newest Session defaults to its own last Session,
   // but reads historical closes for every peer rather than mixing in live prices.
-  const isHistorical = latest != null && day !== latest;
   const tickers = isHistorical
     ? await readDayTickers(symbols, day)
     : await readLiveTickers(symbols, day, !symbol);

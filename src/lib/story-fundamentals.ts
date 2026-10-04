@@ -1,14 +1,17 @@
 import { sessionDayTimes } from "./market.ts";
 import type { StoryFundamentals } from "./story-input.ts";
 import { db } from "./supabase.ts";
+import { readMaybeOne } from "./db-read.ts";
 
 /** Latest business facts observed by the application by this ET session's close. */
 export async function loadStoryFundamentals(symbol: string, day: string): Promise<StoryFundamentals | null> {
   const { close } = sessionDayTimes(day);
-  const { data, error } = await db.from("fundamentals_history")
-    .select("known_at,facts").eq("symbol", symbol).lte("known_at", close)
-    .order("known_at", { ascending: false }).limit(1).maybeSingle();
-  if (error) throw new Error(`fundamentals history for ${symbol}: ${error.message}`);
+  const data = await readMaybeOne<{ known_at: string; facts: Record<string, unknown> }>(
+    `fundamentals-history:${symbol}`, (signal) =>
+      db.from("fundamentals_history")
+        .select("known_at,facts").eq("symbol", symbol).lte("known_at", close)
+        .order("known_at", { ascending: false }).limit(1).abortSignal(signal).retry(false).maybeSingle(),
+  );
   if (!data) return null;
   const facts = data.facts as Record<string, unknown>;
   const number = (key: string) => facts[key] == null ? null : Number(facts[key]);
