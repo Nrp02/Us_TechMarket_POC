@@ -25,7 +25,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await ingestNews());
+    const result = await ingestNews();
+    // A cycle whose AI call produced no blurb must not read as success in
+    // net._http_response; the articles are still stored and stay queued.
+    const aiFailed = result.aiCalls > 0 && result.summarised === 0;
+    return NextResponse.json(result, { status: aiFailed ? 502 : 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ingest failed";
     return NextResponse.json({ error: message }, { status: 502 });

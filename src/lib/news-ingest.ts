@@ -2,8 +2,7 @@ import { fetchAllNews, type RawArticle } from "@/lib/finnhub-news";
 import { SAFETY_RULES } from "@/lib/gemini";
 import { generateNewsJson } from "@/lib/openrouter";
 import { validateNewsSummaries } from "@/lib/news-summary-response";
-import { selectForSummary } from "@/lib/news-select";
-import { readRows } from "@/lib/db-read";
+import { readRows, readRowsWithCount } from "@/lib/db-read";
 import { db } from "@/lib/supabase";
 import { TRACKED_STOCK_SYMBOLS } from "@/lib/symbols";
 
@@ -51,7 +50,7 @@ export type IngestResult = {
   failed: string[];
 };
 
-export function buildNewsPrompt(articles: RawArticle[]): string {
+export function buildNewsPrompt(articles: Pick<RawArticle, "finnhubId" | "headline" | "snippet">[]): string {
   const items = articles.map((a) => ({
     id: String(a.finnhubId),
     headline: a.headline,
@@ -74,46 +73,23 @@ Articles:
 ${JSON.stringify(items, null, 2)}`;
 }
 
-export async function ingestNews(): Promise<IngestResult> {
-  const startedJobAt = Date.now();
-  const failed: string[] = [];
-
-  // Stock/sector categorisation is derived from the stored tags at read time.
-  const { articles, errors } = await fetchAllNews(TRACKED_STOCK_SYMBOLS);
-  failed.push(...errors);
-  const result: IngestResult = {
-    fetched: articles.length,
-    alreadyStored: 0,
-    stored: 0,
-    summarised: 0,
-    awaitingSummary: 0,
-    aiCalls: 0,
-    tokens: undefined,
-    failed,
-  };
-  if (!articles.length) return result;
-
-  // One read covering both questions this cycle has to answer: which articles
-  // are already stored (so they are not written twice), and which of those
-  // already carry a blurb (so they are not summarised twice). news_summaries'
-  // primary key is news_id, so PostgREST embeds a single object here even though
-  // the client's inferred type says array — the same caveat as queries.ts.
+/** Store every fetched article and its source text, before any AI call. */
+async function storeArticles(articles: RawArticle[], result: IngestResult): Promise<void> {
+  // news_summaries is not read here: whether an article still needs a blurb is
+  // answered by the queue read in ingestNews, from the database.
   const existing = await readRows<Record<string, unknown>>("news-ingest:existing", (signal) =>
     db.from("news")
-      .select("id, finnhub_id, related_symbols, news_summaries(summary)")
+      .select("id, finnhub_id, related_symbols")
       .in("finnhub_id", articles.map((a) => a.finnhubId))
       .abortSignal(signal).retry(false),
   );
 
   const newsIdByFinnhubId = new Map<number, number>();
-  const hasSummary = new Set<number>();
   const relatedByFinnhubId = new Map<number, string[]>();
   for (const row of existing) {
     const finnhubId = Number(row.finnhub_id);
     newsIdByFinnhubId.set(finnhubId, row.id as number);
     relatedByFinnhubId.set(finnhubId, (row.related_symbols as string[] | null) ?? []);
-    const embedded = row.news_summaries as unknown as { summary: string } | null;
-    if (embedded?.summary) hasSummary.add(finnhubId);
   }
 
   // Store everything new, uncapped. This is the whole point of the split: the
@@ -152,9 +128,6 @@ export async function ingestNews(): Promise<IngestResult> {
     result.stored = inserted?.length ?? 0;
   }
 
-  const toSummarise = selectForSummary(articles, hasSummary, MAX_PER_CYCLE);
-  const pending = articles.filter((a) => !hasSummary.has(a.finnhubId)).length;
-  result.awaitingSummary = pending;
   // Preserve the actual provider snippet independently from the displayed paraphrase.
   const evidenceRows = articles.flatMap((article) => {
     const news_id = newsIdByFinnhubId.get(article.finnhubId);
@@ -165,6 +138,48 @@ export async function ingestNews(): Promise<IngestResult> {
     const { error } = await db.from("news_evidence").upsert(evidenceRows, { onConflict: "news_id" });
     if (error) throw new Error(`news evidence upsert: ${error.message}`);
   }
+}
+
+export async function ingestNews(): Promise<IngestResult> {
+  const startedJobAt = Date.now();
+  const failed: string[] = [];
+
+  // Stock/sector categorisation is derived from the stored tags at read time.
+  const { articles, errors } = await fetchAllNews(TRACKED_STOCK_SYMBOLS);
+  failed.push(...errors);
+  const result: IngestResult = {
+    fetched: articles.length,
+    alreadyStored: 0,
+    stored: 0,
+    summarised: 0,
+    awaitingSummary: 0,
+    aiCalls: 0,
+    tokens: undefined,
+    failed,
+  };
+  if (articles.length) await storeArticles(articles, result);
+
+  // The queue lives in the database, not in this cycle's fetch: an article that
+  // missed a cycle (cap, failed call, or an entry the model left out) stays
+  // pending until it is blurbed, even after it leaves Finnhub's window. Newest
+  // first keeps today's feed current; spare capacity on quiet cycles drains the
+  // rest. The source text comes from news_evidence (AI input only, never shown).
+  const queue = await readRowsWithCount<Record<string, unknown>>("news-ingest:queue", (signal) =>
+    db.from("news")
+      .select("id, finnhub_id, headline, news_summaries!left(news_id), news_evidence!left(source_text)", { count: "exact" })
+      .is("news_summaries", null)
+      .order("published_at", { ascending: false })
+      .limit(MAX_PER_CYCLE)
+      .abortSignal(signal).retry(false),
+  );
+  const pending = queue.count ?? queue.rows.length;
+  result.awaitingSummary = pending;
+  const toSummarise = queue.rows.map((row) => ({
+    newsId: row.id as number,
+    finnhubId: Number(row.finnhub_id),
+    headline: row.headline as string,
+    snippet: (row.news_evidence as { source_text: string } | null)?.source_text ?? "",
+  }));
   if (!toSummarise.length) return result;
 
   // One AI attempt per cycle. A failed batch remains pending in the feed.
@@ -185,9 +200,8 @@ export async function ingestNews(): Promise<IngestResult> {
 
   const summaryRows = toSummarise.flatMap((article) => {
     const summary = summaries.get(String(article.finnhubId));
-    const newsId = newsIdByFinnhubId.get(article.finnhubId);
-    return summary && newsId != null
-      ? [{ news_id: newsId, summary, generated_at: new Date().toISOString() }]
+    return summary
+      ? [{ news_id: article.newsId, summary, generated_at: new Date().toISOString() }]
       : [];
   });
 

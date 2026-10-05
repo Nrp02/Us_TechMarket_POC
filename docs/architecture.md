@@ -52,7 +52,7 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 
 **Refresh** — `refresh.ts` fetches per symbol (concurrency 5, per-symbol try/catch so failures never overwrite good rows), `refresh-rows.ts` shapes the rows, `closing-price.ts` swaps in the official close after the bell, `fomc-calendar.ts` is static FOMC dates.
 
-**News** — `news-ingest.ts`: fetch → store every article (uncapped) → `news-select.ts` picks ≤50 without a blurb → one OpenRouter call → `news-summary-response.ts` validates the whole batch before persisting. Relevance matching (`mentionsSymbol`) is in `symbols.ts`.
+**News** — `news-ingest.ts`: fetch → store every article and its source text in `news_evidence` (uncapped) → read the queue from the database (articles with no `news_summaries` row, newest first, ≤50) → one OpenRouter call → `news-summary-response.ts` keeps each valid entry and drops invented, duplicate or empty ones. An article stays queued until it is blurbed, even after it leaves Finnhub's fetch window. The route returns 502 when the AI call stores no blurb. Relevance matching (`mentionsSymbol`) is in `symbols.ts`.
 
 **Daily Summary** — `daily-summary.ts`: loads the day with `day-data.ts` (one batched read), builds `timeline.ts` events, one Gemini call per 5 stocks; prompt, schema and input shaping live in `daily-summary-prompt.ts`; `significance.ts` for the badge.
 
@@ -127,6 +127,6 @@ Migrations: `supabase/migrations/0001…0023` (0022 retires the analysis-attempt
 | A number on a page is wrong | `queries.ts` → `session.ts`/`day-ticker.ts` → the writer in `refresh.ts` |
 | Story text is wrong or unsafe | `story-analysis-quality.ts` (prompt + validators), `story-guideline.ts`, `story-input.ts` |
 | Add a stock | `symbols.ts` (+ `logos.ts` mark; `logos.test.ts` enforces it) |
-| News missing or unsummarised | `news-ingest.ts`, `news-select.ts`, `openrouter.ts` |
+| News missing or unsummarised | `news-ingest.ts`, `news-summary-response.ts`, `openrouter.ts` |
 | Layout / visual | `DESIGN.md`, then the component; update the matching `loading.tsx` |
 | Change a schedule | `scripts/setup-cron.mts` (not `vercel.json`) |
