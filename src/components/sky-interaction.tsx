@@ -13,14 +13,13 @@ import { PANES, forEachReadBox } from "@/components/page-measure";
 //      brighten a little and then settle back. Never a touch screen: there is
 //      no hovering finger, and a glow that follows a scroll gesture would be
 //      motion nobody asked for.
-//   2. CONSTELLATION — resting a fine pointer on one of a handful of bright
-//      stars, or tapping it on a touch screen, traces a figure through the
+//   2. CONSTELLATION — a fine pointer passing over one of a handful of bright
+//      stars, or a tap on it on a touch screen, traces a figure through the
 //      stars around it: two arms leave the star in opposite directions, each
 //      a chain of thin lines that bends gently from star to star, drawn at
-//      one steady speed, held a moment, and faded. The pointer has to stay a
-//      beat first, so passing over the sky on the way to a control draws
-//      nothing. Nothing opens, nothing is counted, and the cursor never
-//      changes over a star, so it cannot read as a control.
+//      one steady speed, held a moment, and faded. Nothing opens, nothing is
+//      counted, and the cursor never changes over a star, so it cannot read
+//      as a control.
 //
 // Neither effect ever lands under content. Every panel, the nav card, and all
 // text or controls sitting on the bare field are collected as rectangles; a
@@ -46,8 +45,6 @@ const GLOW_RADIUS = 110; // CSS px around the pointer
 const GLOW_RISE_MS = 90;
 const GLOW_FALL_MS = 650;
 
-// How long a fine pointer rests on an anchor before its figure is drawn.
-const DWELL_MS = 420;
 const LINK_MIN = 36;
 const LINK_MAX = 220;
 // The figure's two arms, in lines: the first leaves in whichever direction
@@ -122,11 +119,8 @@ export function SkyInteraction() {
     let dpr = 1;
 
     let constellation: Constellation | null = null;
-    // The anchor the pointer is resting on and its timer; and the anchor
-    // whose figure the pointer has already drawn, which it must leave before
-    // that star can draw again.
-    let dwell = 0;
-    let dwellOn = -1;
+    // The anchor whose figure the pointer has drawn, which it must leave
+    // before that star can draw again.
     let spent = -1;
     let quietUntil = 0;
     let frame = 0;
@@ -393,42 +387,17 @@ export function SkyInteraction() {
       run();
     };
 
-    const stopDwell = () => {
-      window.clearTimeout(dwell);
-      dwell = 0;
-      dwellOn = -1;
-    };
-
-    // Called with the pointer's last position once it has rested on an
-    // anchor for DWELL_MS. The page may have moved under it meanwhile, so the
-    // star is looked for again.
-    let pointer = { x: 0, y: 0 };
-    const onDwell = () => {
-      const on = dwellOn;
-      stopDwell();
-      if (constellation || performance.now() < quietUntil) return;
-      rectsDirty = true;
-      collectRects();
-      follow();
-      if (anchorAt(pointer.x, pointer.y, 28) !== on) return;
-      spent = on;
-      begin(on);
-    };
-
     const onMove = (e: PointerEvent) => {
       if (reducedMq.matches || !fineMq.matches || e.pointerType === "touch") return;
       if (constellation || performance.now() < quietUntil) return;
       collectRects();
       follow();
-      pointer = { x: e.clientX, y: e.clientY };
       const on = e.target instanceof Element && e.target.closest(NOT_SKY) ? -1 : anchorAt(e.clientX, e.clientY, 28);
       if (on !== spent) spent = -1;
-      if (on !== dwellOn) {
-        stopDwell();
-        if (on >= 0 && on !== spent) {
-          dwellOn = on;
-          dwell = window.setTimeout(onDwell, DWELL_MS);
-        }
+      if (on >= 0 && on !== spent) {
+        spent = on;
+        begin(on);
+        return;
       }
       let any = false;
       for (let i = 0; i < stars.length; i++) {
@@ -470,7 +439,6 @@ export function SkyInteraction() {
     };
 
     const onResize = () => {
-      stopDwell();
       layout();
       constellation = null;
       peak.fill(0);
@@ -478,7 +446,6 @@ export function SkyInteraction() {
 
     const quiet = () => {
       quietUntil = performance.now() + METEOR_QUIET_MS;
-      stopDwell();
       rectsDirty = true;
       constellation = null;
       peak.fill(0);
@@ -489,7 +456,6 @@ export function SkyInteraction() {
     // back as its static self rather than resuming a half-faded figure.
     const onVisibility = () => {
       if (document.visibilityState !== "hidden") return;
-      stopDwell();
       if (frame) cancelAnimationFrame(frame);
       frame = 0;
       last = 0;
@@ -526,7 +492,6 @@ export function SkyInteraction() {
       document.removeEventListener("visibilitychange", onVisibility);
       reducedMq.removeEventListener("change", onReducedChange);
       if (frame) cancelAnimationFrame(frame);
-      stopDwell();
       quietRef.current = null;
     };
   }, []);
