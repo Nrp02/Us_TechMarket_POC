@@ -13,10 +13,14 @@ import { PANES, forEachReadBox } from "@/components/page-measure";
 //      brighten a little and then settle back. Never a touch screen: there is
 //      no hovering finger, and a glow that follows a scroll gesture would be
 //      motion nobody asked for.
-//   2. CONSTELLATION — clicking or tapping bare sky right on one of a handful
-//      of bright stars draws a few thin lines to its neighbours, holds them a
-//      moment, and lets them fade. Nothing opens, nothing is counted, and the
-//      cursor never changes over a star, so it cannot read as a control.
+//   2. CONSTELLATION — resting a fine pointer on one of a handful of bright
+//      stars, or tapping it on a touch screen, traces a figure through the
+//      stars around it: two arms leave the star in opposite directions, each
+//      a chain of thin lines that bends gently from star to star, drawn at
+//      one steady speed, held a moment, and faded. The pointer has to stay a
+//      beat first, so passing over the sky on the way to a control draws
+//      nothing. Nothing opens, nothing is counted, and the cursor never
+//      changes over a star, so it cannot read as a control.
 //
 // Neither effect ever lands under content. Every panel, the nav card, and all
 // text or controls sitting on the bare field are collected as rectangles; a
@@ -42,12 +46,21 @@ const GLOW_RADIUS = 110; // CSS px around the pointer
 const GLOW_RISE_MS = 90;
 const GLOW_FALL_MS = 650;
 
+// How long a fine pointer rests on an anchor before its figure is drawn.
+const DWELL_MS = 420;
 const LINK_MIN = 36;
 const LINK_MAX = 220;
-const MAX_LINKS = 3;
-const DRAW_MS = 450;
-const LINK_STAGGER_MS = 90;
-const HOLD_UNTIL_MS = 1700;
+// The figure's two arms, in lines: the first leaves in whichever direction
+// has the nearest star, the second roughly opposite it.
+const ARMS = [4, 2];
+// The sharpest bend an arm may take from one line to the next. Wider and a
+// chain doubles back on itself into a zigzag; narrower and it is a ruler.
+const MAX_TURN = 1.5; // radians
+// Lines are traced at one speed, so a long line takes longer than a short one.
+const TRACE_PX_PER_MS = 0.42;
+// The ring that marks the anchor comes up over this long.
+const RING_MS = 450;
+const HOLD_MS = 1400;
 const FADE_MS = 1000;
 
 // Meteors run 1150ms plus a 160ms trail offset.
@@ -74,7 +87,10 @@ const NOT_SKY = `${PANES},a,button,input,select,textarea,summary,label,[role]`;
 // current sway offset and are what every test and draw uses.
 type Star = { bx: number; by: number; x: number; y: number; r: number; depth: 0 | 1; anchor: boolean; hidden: boolean };
 type Rect = { l: number; t: number; r: number; b: number };
-type Constellation = { from: number; to: number[]; start: number; fadeFrom: number };
+// A line from star `a` to star `b`, traced from `begin` for `span` ms after
+// the figure starts.
+type Line = { a: number; b: number; begin: number; span: number };
+type Constellation = { from: number; lines: Line[]; start: number; fadeFrom: number };
 
 export function SkyInteraction() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -106,6 +122,12 @@ export function SkyInteraction() {
     let dpr = 1;
 
     let constellation: Constellation | null = null;
+    // The anchor the pointer is resting on and its timer; and the anchor
+    // whose figure the pointer has already drawn, which it must leave before
+    // that star can draw again.
+    let dwell = 0;
+    let dwellOn = -1;
+    let spent = -1;
     let quietUntil = 0;
     let frame = 0;
     let last = 0;
@@ -203,6 +225,57 @@ export function SkyInteraction() {
       return false;
     };
 
+    // Whether two lines cross away from the star they share.
+    const cut = (p: Star, q: Star, r: Star, s: Star) => {
+      if (p === r || p === s || q === r || q === s) return false;
+      const side = (a: Star, b: Star, c: Star) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+      return side(p, q, r) !== side(p, q, s) && side(r, s, p) !== side(r, s, q);
+    };
+
+    // The figure from an anchor: each arm walks to the nearest star it may
+    // reach, never back to one it has used, never through content or across
+    // a line already drawn, and never turning sharper than MAX_TURN. The
+    // second arm starts heading away from the first.
+    const figure = (from: number): Line[] => {
+      const lines: Line[] = [];
+      const used = new Set([from]);
+      let away: number | null = null;
+      for (const length of ARMS) {
+        let at = from;
+        let heading = away;
+        let begin = 0;
+        for (let k = 0; k < length; k++) {
+          const a = stars[at];
+          let best = -1;
+          let bestD = Infinity;
+          let bestAng = 0;
+          stars.forEach((st, i) => {
+            if (used.has(i) || st.hidden) return;
+            const d = Math.hypot(st.x - a.x, st.y - a.y);
+            if (d < LINK_MIN || d > LINK_MAX || d >= bestD) return;
+            const ang = Math.atan2(st.y - a.y, st.x - a.x);
+            if (heading !== null) {
+              const turn = Math.abs(ang - heading) % (Math.PI * 2);
+              if (Math.min(turn, Math.PI * 2 - turn) > MAX_TURN) return;
+            }
+            if (crosses(a, st) || lines.some((l) => cut(a, st, stars[l.a], stars[l.b]))) return;
+            best = i;
+            bestD = d;
+            bestAng = ang;
+          });
+          if (best < 0) break;
+          const span = bestD / TRACE_PX_PER_MS;
+          lines.push({ a: at, b: best, begin, span });
+          if (k === 0 && away === null) away = bestAng + Math.PI;
+          used.add(best);
+          begin += span;
+          heading = bestAng;
+          at = best;
+        }
+      }
+      return lines;
+    };
+
     const draw = (now: number) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
@@ -235,15 +308,17 @@ export function SkyInteraction() {
         const a = stars[c.from];
         ctx.lineCap = "round";
         ctx.lineWidth = 1;
-        c.to.forEach((idx, k) => {
-          const b = stars[idx];
-          const p = Math.min(1, Math.max(0, (t - k * LINK_STAGGER_MS) / DRAW_MS));
-          if (p <= 0) return;
-          const e = 1 - Math.pow(1 - p, 3);
+        // Traced at a constant speed, so where one line ends the next goes
+        // on without a pause or a lurch.
+        for (const line of c.lines) {
+          const p = Math.min(1, Math.max(0, (t - line.begin) / line.span));
+          if (p <= 0) continue;
+          const s = stars[line.a];
+          const b = stars[line.b];
           ctx.strokeStyle = `rgba(214, 224, 240, ${0.38 * fade})`;
           ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e);
+          ctx.moveTo(s.x, s.y);
+          ctx.lineTo(s.x + (b.x - s.x) * p, s.y + (b.y - s.y) * p);
           ctx.stroke();
           if (p === 1) {
             ctx.fillStyle = `rgba(244, 246, 250, ${0.4 * fade})`;
@@ -251,8 +326,8 @@ export function SkyInteraction() {
             ctx.arc(b.x, b.y, b.r * 1.3, 0, Math.PI * 2);
             ctx.fill();
           }
-        });
-        ctx.strokeStyle = `rgba(214, 224, 240, ${0.3 * fade * Math.min(1, t / DRAW_MS)})`;
+        }
+        ctx.strokeStyle = `rgba(214, 224, 240, ${0.3 * fade * Math.min(1, t / RING_MS)})`;
         ctx.beginPath();
         ctx.arc(a.x, a.y, a.r * 3.2, 0, Math.PI * 2);
         ctx.stroke();
@@ -291,11 +366,70 @@ export function SkyInteraction() {
       if (!frame) frame = requestAnimationFrame(tick);
     };
 
+    // The visible anchor within `hit` px of a point on bare sky, or -1.
+    const anchorAt = (x: number, y: number, hit: number) => {
+      if (inRect(x, y)) return -1;
+      let from = -1;
+      let best = hit;
+      stars.forEach((st, i) => {
+        if (!st.anchor || st.hidden) return;
+        const d = Math.hypot(st.x - x, st.y - y);
+        if (d < best) {
+          best = d;
+          from = i;
+        }
+      });
+      return from;
+    };
+
+    // Draws the figure from an anchor, if it has one of at least two lines.
+    const begin = (from: number) => {
+      const lines = figure(from);
+      if (lines.length < 2) return;
+      const now = performance.now();
+      const traced = Math.max(...lines.map((l) => l.begin + l.span));
+      constellation = { from, lines, start: now, fadeFrom: now + traced + HOLD_MS };
+      peak.fill(0);
+      run();
+    };
+
+    const stopDwell = () => {
+      window.clearTimeout(dwell);
+      dwell = 0;
+      dwellOn = -1;
+    };
+
+    // Called with the pointer's last position once it has rested on an
+    // anchor for DWELL_MS. The page may have moved under it meanwhile, so the
+    // star is looked for again.
+    let pointer = { x: 0, y: 0 };
+    const onDwell = () => {
+      const on = dwellOn;
+      stopDwell();
+      if (constellation || performance.now() < quietUntil) return;
+      rectsDirty = true;
+      collectRects();
+      follow();
+      if (anchorAt(pointer.x, pointer.y, 28) !== on) return;
+      spent = on;
+      begin(on);
+    };
+
     const onMove = (e: PointerEvent) => {
       if (reducedMq.matches || !fineMq.matches || e.pointerType === "touch") return;
       if (constellation || performance.now() < quietUntil) return;
       collectRects();
       follow();
+      pointer = { x: e.clientX, y: e.clientY };
+      const on = e.target instanceof Element && e.target.closest(NOT_SKY) ? -1 : anchorAt(e.clientX, e.clientY, 28);
+      if (on !== spent) spent = -1;
+      if (on !== dwellOn) {
+        stopDwell();
+        if (on >= 0 && on !== spent) {
+          dwellOn = on;
+          dwell = window.setTimeout(onDwell, DWELL_MS);
+        }
+      }
       let any = false;
       for (let i = 0; i < stars.length; i++) {
         const st = stars[i];
@@ -309,8 +443,10 @@ export function SkyInteraction() {
       if (any) run();
     };
 
+    // A tap, on a screen with no pointer to rest. A fine pointer draws by
+    // resting (onMove), so its click on the sky does nothing.
     const onClick = (e: MouseEvent) => {
-      if (reducedMq.matches || e.button !== 0) return;
+      if (reducedMq.matches || fineMq.matches || e.button !== 0) return;
       if (performance.now() < quietUntil) return;
       const target = e.target as Element | null;
       if (target?.closest(NOT_SKY)) return;
@@ -318,47 +454,8 @@ export function SkyInteraction() {
       rectsDirty = true;
       collectRects();
       follow();
-      if (inRect(e.clientX, e.clientY)) return;
-
-      const hit = coarseMq.matches ? 40 : 28;
-      let from = -1;
-      let best = hit;
-      stars.forEach((st, i) => {
-        if (!st.anchor || st.hidden) return;
-        const d = Math.hypot(st.x - e.clientX, st.y - e.clientY);
-        if (d < best) {
-          best = d;
-          from = i;
-        }
-      });
-      if (from < 0) return;
-
-      const a = stars[from];
-      const candidates = stars
-        .map((st, i) => ({ i, d: Math.hypot(st.x - a.x, st.y - a.y), st }))
-        .filter(({ i, d, st }) => i !== from && !st.hidden && d >= LINK_MIN && d <= LINK_MAX)
-        .sort((p, q) => p.d - q.d);
-      // Nearest first, but no two lines leaving at nearly the same angle —
-      // that reads as one thick stroke rather than a figure.
-      const to: number[] = [];
-      const angles: number[] = [];
-      for (const { i, st } of candidates) {
-        if (to.length >= MAX_LINKS) break;
-        const ang = Math.atan2(st.y - a.y, st.x - a.x);
-        const close = angles.some((b) => {
-          const diff = Math.abs(ang - b) % (Math.PI * 2);
-          return Math.min(diff, Math.PI * 2 - diff) < 0.45;
-        });
-        if (close || crosses(a, st)) continue;
-        to.push(i);
-        angles.push(ang);
-      }
-      if (!to.length) return;
-
-      const now = performance.now();
-      constellation = { from, to, start: now, fadeFrom: now + HOLD_UNTIL_MS };
-      peak.fill(0);
-      run();
+      const from = anchorAt(e.clientX, e.clientY, coarseMq.matches ? 40 : 28);
+      if (from >= 0) begin(from);
     };
 
     // Content moves over a fixed sky on scroll, so a line that was clear can
@@ -372,6 +469,7 @@ export function SkyInteraction() {
     };
 
     const onResize = () => {
+      stopDwell();
       layout();
       constellation = null;
       peak.fill(0);
@@ -379,6 +477,7 @@ export function SkyInteraction() {
 
     const quiet = () => {
       quietUntil = performance.now() + METEOR_QUIET_MS;
+      stopDwell();
       rectsDirty = true;
       constellation = null;
       peak.fill(0);
@@ -389,6 +488,7 @@ export function SkyInteraction() {
     // back as its static self rather than resuming a half-faded figure.
     const onVisibility = () => {
       if (document.visibilityState !== "hidden") return;
+      stopDwell();
       if (frame) cancelAnimationFrame(frame);
       frame = 0;
       last = 0;
@@ -425,6 +525,7 @@ export function SkyInteraction() {
       document.removeEventListener("visibilitychange", onVisibility);
       reducedMq.removeEventListener("change", onReducedChange);
       if (frame) cancelAnimationFrame(frame);
+      stopDwell();
       quietRef.current = null;
     };
   }, []);
