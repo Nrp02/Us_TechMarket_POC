@@ -12,7 +12,7 @@
 // Re-run after changing --saturn-ring or --saturn-glow.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
@@ -20,8 +20,15 @@ import puppeteer from "puppeteer-core";
 const CHROME = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const BOX = 2652;
 const OUT = 1326;
-const RING = "#ded7c8";
-const GLOW = "#f0dfb4";
+// Read from the page, so a re-run always bakes the colours it uses.
+const css = readFileSync("src/app/globals.css", "utf8");
+const token = (name: string) => {
+  const value = css.match(new RegExp(`--${name}:\\s*([^;]+);`))?.[1].trim();
+  if (!value) throw new Error(`--${name} not found in globals.css`);
+  return value;
+};
+const RING = token("saturn-ring");
+const GLOW = token("saturn-glow");
 const NOISE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='700'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.012' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 2.4 0 0 0 -0.55'/%3E%3C/filter%3E%3Crect width='700' height='700' filter='url(%23n)'/%3E%3C/svg%3E";
 

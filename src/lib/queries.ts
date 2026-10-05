@@ -9,8 +9,8 @@ import { computePeerComparison, type PeerComparison } from "@/lib/peer-compariso
 import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
 import {
   newestSnapshotAt,
+  readPageDay,
   readPageTickers,
-  resolvePageSession,
   type Ticker,
 } from "@/lib/session";
 import { CACHE_SECONDS } from "@/lib/cache-policy";
@@ -235,7 +235,7 @@ async function getMarketStoryUncached(day: string): Promise<MarketStory | null> 
 /** One resolved Market Session, with the narrative and charts for that same day. */
 export const getMarketSession = unstable_cache(
   async (requestedDate?: string) => {
-    const session = await resolvePageSession(requestedDate);
+    const session = await readPageDay(requestedDate);
     const [tickers, story, indexDailyCloses] = await Promise.all([
       readPageTickers([...INDEX_SYMBOLS, ...TRACKED_STOCK_SYMBOLS], session),
       getMarketStoryUncached(session.day),
@@ -272,7 +272,7 @@ export const getMarketSession = unstable_cache(
  */
 async function getActivityUncached(symbol: string, day?: string): Promise<Activity | null> {
   const peerSymbols = PEERS[symbol] ?? [];
-  const session = await resolvePageSession(day, symbol);
+  const session = await readPageDay(day, symbol);
   const sessionDay = session.day;
 
   // One wave, not two: everything here needs only `symbol` and `sessionDay`,

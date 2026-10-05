@@ -267,25 +267,14 @@ export async function readSessionTickers(
   return { day: sessionDay, isLive, tickers: bySymbol, stale: symbols.filter((s) => !bySymbol.has(s)) };
 }
 
-export type PageSession = {
+export type PageDay = {
   day: string;
   /** The Session shown when the date parameter is absent or invalid. */
   defaultDay: string;
   isHistorical: boolean;
   hasSession: boolean;
   availableDates: string[];
-  tickers: Ticker[];
 };
-
-export type PageDay = Omit<PageSession, "tickers">;
-
-/** Resolve the date and read its figures together; only plain JSON crosses the page cache. */
-export async function readPageSession(
-  symbols: string[], requestedDate?: string, symbol?: string,
-): Promise<PageSession> {
-  const day = await resolvePageSession(requestedDate, symbol);
-  return { ...day, tickers: await readPageTickers(symbols, day, symbol) };
-}
 
 /**
  * Which Session the page shows. Split from its figures so a page can read
@@ -293,7 +282,7 @@ export async function readPageSession(
  * one has opened yet costs a round trip per wave (~0.4s each, measured
  * 2026-10-05), and the figures alone are two.
  */
-export async function resolvePageSession(requestedDate?: string, symbol?: string): Promise<PageDay> {
+export async function readPageDay(requestedDate?: string, symbol?: string): Promise<PageDay> {
   const [dates, latest, symbolLatest] = await Promise.all([
     readRows<{ day: string }>("activity-dates", (signal) =>
       db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal).retry(false)),

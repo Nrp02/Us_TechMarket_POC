@@ -1697,8 +1697,9 @@ a {
 /* --- Changing what the page shows ---------------------------------------
    A new stock, tab or filter is the same page showing something else, not a
    new arrival, so none of the above replays (`page-entrance.tsx` marks the
-   arrival). A new date is an arrival, and plays all of it. The page's content is just replaced, coming up from 40% in a
-   fifth of a second, and the one control that changed takes its lit plate.
+   arrival; a new date is an arrival, and plays all of it). On a change the
+   content is just replaced, coming up from 40% in a fifth of a second, and
+   the one control that changed takes its lit plate.
    No card waits its turn and no chart redraws: the visitor asked for the
    data and gets it the moment it is there. */
 @keyframes enter-refresh {

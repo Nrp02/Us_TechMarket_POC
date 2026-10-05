@@ -7,7 +7,12 @@ Object.assign(globalThis, { AsyncLocalStorage });
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://page-session-test.invalid";
 process.env.SUPABASE_SECRET_KEY = "test-key";
-const { readPageSession } = await import("./session.ts");
+const { readPageDay, readPageTickers } = await import("./session.ts");
+// The day, then its figures, as the cached page reads in queries.ts compose them.
+async function readPageSession(symbols: string[], requestedDate?: string, symbol?: string) {
+  const day = await readPageDay(requestedDate, symbol);
+  return { ...day, tickers: await readPageTickers(symbols, day, symbol) };
+}
 const { getMarketSession, getActivity } = await import("./queries.ts");
 
 type Row = Record<string, string | number | null>;

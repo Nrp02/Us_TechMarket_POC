@@ -4,14 +4,6 @@
 const BASE = process.env.BASE ?? "http://localhost:3402";
 const DRIVER = "http://localhost:4444";
 const WINDOW_MS = 2200;
-const SKIP_MASK_UPLOAD = process.env.SKIP_MASK_UPLOAD === "1";
-const DISABLE_SATURN = process.env.DISABLE_SATURN === "1";
-const NO_ANIMATIONS = process.env.NO_ANIMATIONS === "1";
-const NO_CLICK = process.env.NO_CLICK === "1";
-const HIDE_MAIN = process.env.HIDE_MAIN === "1";
-const HIDE_SKY = process.env.HIDE_SKY === "1";
-const HIDE_NIGHT = process.env.HIDE_NIGHT === "1";
-const HIDE_SATURN = process.env.HIDE_SATURN === "1";
 // Every route to every other, ending where it starts.
 const HOPS = [
   ["Market → Stocks", 'header a[href^="/todays-activity"]'],
@@ -53,35 +45,6 @@ try {
     });
     await wait(2500);
   }
-  console.log("Performance entries:", await command("/execute/sync", {
-    script: "return PerformanceObserver.supportedEntryTypes",
-    args: [],
-  }));
-  if (DISABLE_SATURN) {
-    await command("/execute/sync", {
-      script: "document.querySelector('.saturn-canvas').getContext('webgl2').getExtension('WEBGL_lose_context').loseContext()",
-      args: [],
-    });
-  }
-  if (NO_ANIMATIONS) {
-    await command("/execute/sync", {
-      script: "const style = document.createElement('style'); style.textContent = '* { animation-duration: 0s !important; transition-duration: 0s !important }'; document.head.append(style)",
-      args: [],
-    });
-  }
-  if (HIDE_MAIN) {
-    await command("/execute/sync", {
-      script: "document.querySelector('main').style.display = 'none'",
-      args: [],
-    });
-  }
-  if (HIDE_SKY || HIDE_NIGHT || HIDE_SATURN) {
-    await command("/execute/sync", {
-      script: "const style = document.createElement('style'); style.textContent = arguments[0]; document.head.append(style)",
-      args: [HIDE_SKY ? ".night-sky,.saturn-scene { display:none !important }" : HIDE_NIGHT ? ".night-sky { display:none !important }" : ".saturn-scene { display:none !important }"],
-    });
-  }
-
   let failed = false;
   for (const [name, selector] of HOPS) {
     const result = await command<{
@@ -92,18 +55,16 @@ try {
       longest: number;
       drawImages: number;
       drawMs: number;
-      skippedUploads: number;
       calls: Record<string, { count: number; ms: number; max: number; slow: string[] }>;
       topGaps: string[];
       events: string[];
     }>("/execute/async", {
       script: `
-        const selector = arguments[0], duration = arguments[1], skipMaskUpload = arguments[2], noClick = arguments[3], done = arguments[arguments.length - 1];
+        const selector = arguments[0], duration = arguments[1], done = arguments[arguments.length - 1];
         const target = document.querySelector(selector);
         if (!target) return done({ error: 'missing link: ' + selector });
         const original = CanvasRenderingContext2D.prototype.drawImage;
         let drawImages = 0, drawMs = 0;
-        let skippedUploads = 0;
         const calls = {};
         const restore = [];
         function watch(proto, name) {
@@ -112,10 +73,6 @@ try {
           calls[key] = { count: 0, ms: 0, max: 0, slow: [] };
           proto[name] = function(...args) {
             const source = args[args.length - 1];
-            if (skipMaskUpload && name === 'texSubImage2D' && source instanceof HTMLCanvasElement && source.width === 200 && source.height === 300) {
-              skippedUploads++;
-              return;
-            }
             const t = performance.now();
             try { return fn.apply(this, args); }
             finally {
@@ -163,17 +120,16 @@ try {
           done({ path: location.pathname, frames: gaps.length - 1,
             over32: gaps.slice(1).filter(x => x > 32).length,
             over50: gaps.slice(1).filter(x => x > 50).length,
-            longest: Math.max(...gaps.slice(1)), drawImages, drawMs, skippedUploads, calls, topGaps, events });
+            longest: Math.max(...gaps.slice(1)), drawImages, drawMs, calls, topGaps, events });
         }
         requestAnimationFrame(frame);
-        if (!noClick) target.click();
+        target.click();
       `,
-      args: [selector, WINDOW_MS, SKIP_MASK_UPLOAD, NO_CLICK],
+      args: [selector, WINDOW_MS],
     });
     if ("error" in result) throw new Error(String(result.error));
     const line = `${name}: ${result.over32}/${result.frames} frames >32ms, ${result.over50} >50ms, max ${result.longest.toFixed(1)}ms; drawImage ${result.drawImages} calls / ${result.drawMs.toFixed(1)}ms`;
     console.log(line);
-    if (SKIP_MASK_UPLOAD) console.log(`skipped mask uploads: ${result.skippedUploads}`);
     console.log(Object.entries(result.calls).map(([key, stat]) => `${key} ${stat.count} / ${stat.ms.toFixed(1)}ms / max ${stat.max.toFixed(1)}ms${stat.slow.length ? ` [${stat.slow.join(", ")}]` : ""}`).join("; "));
     console.log(`gaps: ${result.topGaps.join("; ")}; events: ${result.events.join("; ")}`);
     if (result.over32 > 2 || result.over50 > 0) failed = true;

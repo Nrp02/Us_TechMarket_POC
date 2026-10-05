@@ -74,7 +74,7 @@ Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRO
 | `queries.ts` | all page reads, cached: `getMarketSession`, `getActivity`, `getSessionStamp` |
 | `queries-news.ts` | news reads, cached: `getNews`, `getNewsTeaser`, `getNewsDates`, `NewsItem` |
 | `cache-policy.ts` | the shared 60s read-cache TTL and the rule that a failed read must throw |
-| `session.ts` / `day-ticker.ts` | `readPageSession` resolves dates and reads matching figures/provenance together; a stock missing the newest Session defaults to its own last Session and reads historical peer figures |
+| `session.ts` / `day-ticker.ts` | `readPageDay` resolves the date, then `readPageTickers` reads its figures alongside the rest of the page; a stock missing the newest Session defaults to its own last Session and reads historical peer figures |
 | `activity-date.ts`, `news-date.ts` | date labels/options and date normalization; Session callers consume the resolved date from queries |
 | `news-category.ts` | Stock vs Market tab, sector filters |
 | `news-retention.ts` | the News page's oldest-day floor |

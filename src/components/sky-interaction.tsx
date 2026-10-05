@@ -45,6 +45,8 @@ const GLOW_RADIUS = 110; // CSS px around the pointer
 const GLOW_RISE_MS = 90;
 const GLOW_FALL_MS = 650;
 
+// How near a fine pointer must pass an anchor to be on it, in CSS px.
+const HOVER_HIT = 28;
 const LINK_MIN = 36;
 const LINK_MAX = 220;
 // The figure's two arms, in lines: the first leaves in whichever direction
@@ -122,6 +124,9 @@ export function SkyInteraction() {
     // The anchor whose figure the pointer has drawn, which it must leave
     // before that star can draw again.
     let spent = -1;
+    // The kind of pointer that last pressed, for the click it makes: not
+    // every browser hands a click its pointerType.
+    let pressedBy = "";
     let quietUntil = 0;
     let frame = 0;
     let last = 0;
@@ -209,7 +214,7 @@ export function SkyInteraction() {
 
     // Sampled every 6px — a line is at most 220px, and a rect is never
     // thinner than the 28px of margin wrapped around it.
-    const crosses = (a: Star, b: Star) => {
+    const throughContent = (a: Star, b: Star) => {
       const len = Math.hypot(b.x - a.x, b.y - a.y);
       const steps = Math.ceil(len / 6);
       for (let k = 1; k < steps; k++) {
@@ -220,7 +225,7 @@ export function SkyInteraction() {
     };
 
     // Whether two lines cross away from the star they share.
-    const cut = (p: Star, q: Star, r: Star, s: Star) => {
+    const linesCross = (p: Star, q: Star, r: Star, s: Star) => {
       if (p === r || p === s || q === r || q === s) return false;
       const side = (a: Star, b: Star, c: Star) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
       return side(p, q, r) !== side(p, q, s) && side(r, s, p) !== side(r, s, q);
@@ -252,7 +257,7 @@ export function SkyInteraction() {
               const turn = Math.abs(ang - heading) % (Math.PI * 2);
               if (Math.min(turn, Math.PI * 2 - turn) > MAX_TURN) return;
             }
-            if (crosses(a, st) || lines.some((l) => cut(a, st, stars[l.a], stars[l.b]))) return;
+            if (throughContent(a, st) || lines.some((l) => linesCross(a, st, stars[l.a], stars[l.b]))) return;
             best = i;
             bestD = d;
             bestAng = ang;
@@ -377,7 +382,7 @@ export function SkyInteraction() {
     };
 
     // Draws the figure from an anchor, if it has one of at least two lines.
-    const begin = (from: number) => {
+    const startFigure = (from: number) => {
       const lines = figure(from);
       if (lines.length < 2) return;
       const now = performance.now();
@@ -389,14 +394,16 @@ export function SkyInteraction() {
 
     const onMove = (e: PointerEvent) => {
       if (reducedMq.matches || !fineMq.matches || e.pointerType === "touch") return;
+      // Leaving the spent star frees it, even while its figure is showing.
+      if (spent >= 0 && Math.hypot(stars[spent].x - e.clientX, stars[spent].y - e.clientY) > HOVER_HIT) spent = -1;
       if (constellation || performance.now() < quietUntil) return;
       collectRects();
       follow();
-      const on = e.target instanceof Element && e.target.closest(NOT_SKY) ? -1 : anchorAt(e.clientX, e.clientY, 28);
+      const on = e.target instanceof Element && e.target.closest(NOT_SKY) ? -1 : anchorAt(e.clientX, e.clientY, HOVER_HIT);
       if (on !== spent) spent = -1;
       if (on >= 0 && on !== spent) {
         spent = on;
-        begin(on);
+        startFigure(on);
         return;
       }
       let any = false;
@@ -412,11 +419,15 @@ export function SkyInteraction() {
       if (any) run();
     };
 
-    // A tap. A fine pointer draws by resting (onMove), so its click on the
-    // sky does nothing; a touch screen on a laptop with one still taps.
+    // A tap. A fine pointer draws by passing over a star (onMove), so its
+    // click on the sky does nothing; a touch screen on a laptop with one
+    // still taps.
+    const onPress = (e: PointerEvent) => {
+      pressedBy = e.pointerType;
+    };
     const onClick = (e: MouseEvent) => {
       if (reducedMq.matches || e.button !== 0) return;
-      if (fineMq.matches && (e as PointerEvent).pointerType !== "touch") return;
+      if (fineMq.matches && pressedBy !== "touch") return;
       if (performance.now() < quietUntil) return;
       const target = e.target as Element | null;
       if (target?.closest(NOT_SKY)) return;
@@ -424,8 +435,8 @@ export function SkyInteraction() {
       rectsDirty = true;
       collectRects();
       follow();
-      const from = anchorAt(e.clientX, e.clientY, coarseMq.matches ? 40 : 28);
-      if (from >= 0) begin(from);
+      const from = anchorAt(e.clientX, e.clientY, coarseMq.matches ? 40 : HOVER_HIT);
+      if (from >= 0) startFigure(from);
     };
 
     // Content moves over a fixed sky on scroll, so a line that was clear can
@@ -476,6 +487,7 @@ export function SkyInteraction() {
 
     layout();
     window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onPress, { passive: true });
     window.addEventListener("click", onClick);
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onResize);
@@ -485,6 +497,7 @@ export function SkyInteraction() {
 
     return () => {
       window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onPress);
       window.removeEventListener("click", onClick);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
