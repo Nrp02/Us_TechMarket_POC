@@ -26,7 +26,7 @@ Two directions that never meet: **jobs write**, **pages read**. A page importing
 | Cron job | Schedule (UTC) | Route | Job module | Writes |
 |---|---|---|---|---|
 | `intraday-snapshots` | `*/15 13-21 * * 1-5` | `api/refresh` | `refresh.ts` (+ `refresh-rows.ts`), then `timeline-rebuild.ts` | `price_cache`, `intraday_snapshots`, `daily_closes`, `fundamentals`, `sec_filings`, `macro_indicators`, `timeline_events` |
-| `news-ingest` | `7 0,2,…,20,21 * * *` (in script; live cron may differ) | `api/ingest-news` | `news-ingest.ts` | `news`, `news_summaries`, `news_evidence` |
+| `news-ingest` | `7 0,2,…,20,21 * * *` | `api/ingest-news` | `news-ingest.ts` | `news`, `news_summaries`, `news_evidence` |
 | `daily-summaries` | `5-55/10 22-23 * * 1-5` | `api/daily-summary` | `daily-summary.ts` | `daily_summaries`, `timeline_events` |
 | `today-story` | `0-55/5 20-23 * * 1-5` | `api/story` | `story-generation.ts`, `market-story-generation.ts` | `stories`, `market_stories` |
 | `data-retention-cleanup` | `0 4 * * *` | pure SQL (`0007`/`0008`) | `prune_old_data()` | deletes old rows |

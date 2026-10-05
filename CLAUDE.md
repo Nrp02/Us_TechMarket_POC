@@ -22,7 +22,7 @@ This file is the **content contract** (what data/features exist); `DESIGN.md` is
 - 43 `TRACKED_STOCK_SYMBOLS` for news, breadth, movers, sector averages; refresh covers them plus six ETF proxies (QQQ, SPY, DIA, XLK, VIXY, SOXX). Deep analysis, fundamentals, SEC, peers: **Top 20 only**. `ALL_SYMBOLS` = Top 20 + ETFs.
 - News filters: All + six sectors. Ambiguous tickers AI/F/ON/TEAM are never matched as ordinary words.
 - Significance count is Top-20-only, and labelled so.
-- Proposed news cron `7 0,2,4,6,8,10,12,14,16,18,20,21 * * *` UTC is **not provisioned**; live cron unchanged. Provisioning cron, live ingestion and deploys are the owner's call.
+- News cron `7 0,2,4,6,8,10,12,14,16,18,20,21 * * *` UTC is **live** (`news-ingest`, running since 2026-09-29; it is the only source of News). Changing schedules, live ingestion and deploys are the owner's call.
 
 ## Stack
 
