@@ -277,10 +277,23 @@ export type PageSession = {
   tickers: Ticker[];
 };
 
+export type PageDay = Omit<PageSession, "tickers">;
+
 /** Resolve the date and read its figures together; only plain JSON crosses the page cache. */
 export async function readPageSession(
   symbols: string[], requestedDate?: string, symbol?: string,
 ): Promise<PageSession> {
+  const day = await resolvePageSession(requestedDate, symbol);
+  return { ...day, tickers: await readPageTickers(symbols, day, symbol) };
+}
+
+/**
+ * Which Session the page shows. Split from its figures so a page can read
+ * everything else keyed on the day alongside them, not behind them: a day no
+ * one has opened yet costs a round trip per wave (~0.4s each, measured
+ * 2026-10-05), and the figures alone are two.
+ */
+export async function resolvePageSession(requestedDate?: string, symbol?: string): Promise<PageDay> {
   const [dates, latest, symbolLatest] = await Promise.all([
     readRows<{ day: string }>("activity-dates", (signal) =>
       db.rpc("activity_days", {}, { count: "exact" }).limit(1000).abortSignal(signal).retry(false)),
@@ -292,10 +305,12 @@ export async function readPageSession(
   const { day, defaultDay, isHistorical } = resolvePageDay({
     requestedDate, availableDates, symbolLatest, latest, today: tradingDay(),
   });
+  return { day, defaultDay, isHistorical, hasSession: latest != null, availableDates };
+}
+
+/** `day`'s figures for `symbols`. `symbol` is the page's own stock, if it has one. */
+export function readPageTickers(symbols: string[], { day, isHistorical }: PageDay, symbol?: string): Promise<Ticker[]> {
   // A symbol missing the newest Session defaults to its own last Session,
   // but reads historical closes for every peer rather than mixing in live prices.
-  const tickers = isHistorical
-    ? await readDayTickers(symbols, day)
-    : await readLiveTickers(symbols, day, !symbol);
-  return { day, defaultDay, isHistorical, hasSession: latest != null, availableDates, tickers };
+  return isHistorical ? readDayTickers(symbols, day) : readLiveTickers(symbols, day, !symbol);
 }

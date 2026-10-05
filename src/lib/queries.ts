@@ -9,7 +9,8 @@ import { computePeerComparison, type PeerComparison } from "@/lib/peer-compariso
 import { computePeriodPerformance, type PeriodPerformance } from "@/lib/period-performance";
 import {
   newestSnapshotAt,
-  readPageSession,
+  readPageTickers,
+  resolvePageSession,
   type Ticker,
 } from "@/lib/session";
 import { CACHE_SECONDS } from "@/lib/cache-policy";
@@ -234,12 +235,13 @@ async function getMarketStoryUncached(day: string): Promise<MarketStory | null> 
 /** One resolved Market Session, with the narrative and charts for that same day. */
 export const getMarketSession = unstable_cache(
   async (requestedDate?: string) => {
-    const session = await readPageSession([...INDEX_SYMBOLS, ...TRACKED_STOCK_SYMBOLS], requestedDate);
-    const [story, indexDailyCloses] = await Promise.all([
+    const session = await resolvePageSession(requestedDate);
+    const [tickers, story, indexDailyCloses] = await Promise.all([
+      readPageTickers([...INDEX_SYMBOLS, ...TRACKED_STOCK_SYMBOLS], session),
       getMarketStoryUncached(session.day),
       getIndexDailyClosesUncached(session.day),
     ]);
-    const bySymbol = new Map(session.tickers.map((ticker) => [ticker.symbol, ticker]));
+    const bySymbol = new Map(tickers.map((ticker) => [ticker.symbol, ticker]));
     const indices = INDEX_SYMBOLS.flatMap((symbol) => {
       const ticker = bySymbol.get(symbol);
       return ticker ? [ticker] : [];
@@ -270,14 +272,14 @@ export const getMarketSession = unstable_cache(
  */
 async function getActivityUncached(symbol: string, day?: string): Promise<Activity | null> {
   const peerSymbols = PEERS[symbol] ?? [];
-  const session = await readPageSession([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], day, symbol);
+  const session = await resolvePageSession(day, symbol);
   const sessionDay = session.day;
 
-  // One wave, not two: the timeline/events/summary queries only need `symbol`
-  // and `sessionDay`, both already known, so they don't have to wait behind the
-  // tickers/intraday/news queries above them.
-  const [intraday, news, timelineRows, eventRows, storyRow, summaryRow, dailyCloses] =
+  // One wave, not two: everything here needs only `symbol` and `sessionDay`,
+  // both already known, so nothing waits behind the tickers.
+  const [tickers, intraday, news, timelineRows, eventRows, storyRow, summaryRow, dailyCloses] =
     await Promise.all([
+      readPageTickers([symbol, SECTOR_SYMBOL, MARKET_SYMBOL, ...peerSymbols], session, symbol),
       getIntraday(symbol, sessionDay),
       getSymbolNews(symbol, sessionDay),
       readRows<{ event_at: string; kind: string; label: string; detail: string | null }>(
@@ -336,7 +338,7 @@ async function getActivityUncached(symbol: string, day?: string): Promise<Activi
       getDailyCloses(symbol, sessionDay),
     ]);
 
-  const bySymbol = new Map(session.tickers.map((t) => [t.symbol, t]));
+  const bySymbol = new Map(tickers.map((t) => [t.symbol, t]));
   const ticker = bySymbol.get(symbol);
   // Narrower than it used to be, and the narrowing matters. This once absorbed
   // a failed read as well, and the route turns null into notFound() — so a

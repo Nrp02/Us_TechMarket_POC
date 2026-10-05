@@ -217,6 +217,7 @@ function paintShade(
   width: number,
   height: number,
   margin: number,
+  shadows: WeakMap<Bounds, HTMLCanvasElement>,
 ): boolean {
   const dy = window.scrollY - shade.scrollY - margin;
   let arriving = false;
@@ -225,13 +226,7 @@ function paintShade(
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = "#000";
-  ctx.shadowOffsetX = OFFSCREEN;
-  ctx.shadowOffsetY = 0;
   const paint = (list: Bounds[], rgb: string, { reach, feather }: { reach: number; feather: number }) => {
-    // shadowBlur is twice the Gaussian's deviation, in canvas pixels.
-    ctx.shadowBlur = (feather / 2) * MASK_SCALE;
-    const grow = reach + feather / 2;
     const pad = reach + feather;
     for (const b of list) {
       const top = b.top - dy;
@@ -240,18 +235,35 @@ function paintShade(
       const amount = arrived(b);
       if (amount < 1) arriving = true;
       if (amount <= 0) continue;
-      ctx.shadowColor = `rgb(${rgb} / ${amount})`;
-      ctx.fillRect(
-        (b.left - grow) * MASK_SCALE - OFFSCREEN,
-        (top - grow) * MASK_SCALE,
-        (b.right - b.left + 2 * grow) * MASK_SCALE,
-        (bottom - top + 2 * grow) * MASK_SCALE,
-      );
+      let shadow = shadows.get(b);
+      if (!shadow) {
+        shadow = document.createElement("canvas");
+        const w = (b.right - b.left) * MASK_SCALE;
+        const h = (b.bottom - b.top) * MASK_SCALE;
+        const edge = pad * MASK_SCALE;
+        const grow = (reach + feather / 2) * MASK_SCALE;
+        shadow.width = Math.ceil(w + 2 * edge);
+        shadow.height = Math.ceil(h + 2 * edge);
+        const brush = shadow.getContext("2d");
+        if (!brush) continue;
+        // Paint the same Gaussian once, with its black source outside the
+        // sprite. During an entrance only its alpha changes, not its blur.
+        const offset = shadow.width + OFFSCREEN;
+        brush.fillStyle = "#000";
+        brush.shadowColor = `rgb(${rgb})`;
+        brush.shadowBlur = (feather / 2) * MASK_SCALE;
+        brush.shadowOffsetX = offset;
+        brush.fillRect(edge - grow - offset, edge - grow, w + 2 * grow, h + 2 * grow);
+        shadows.set(b, shadow);
+      }
+      ctx.globalAlpha = amount;
+      ctx.drawImage(shadow, (b.left - pad) * MASK_SCALE, (top - pad) * MASK_SCALE);
     }
   };
   paint(shade.panes, "255 0 0", PANE_SHADE);
   paint(shade.marks, "0 255 0", TEXT_SHADE);
   paint(shade.bare, "0 0 255", BARE_SHADE);
+  ctx.globalAlpha = 1;
   ctx.shadowColor = "transparent";
   return arriving;
 }
@@ -474,6 +486,7 @@ export function mountSaturn(scene: HTMLElement, box: HTMLElement, options: Satur
   // A change fades from the shade last fully shown; a second change during
   // the fade keeps fading from it, with at most half the fade to go.
   let shadeBoxes: Shade | null = null;
+  const shadows = new WeakMap<Bounds, HTMLCanvasElement>();
   const fade = createShadeFade<Shade>(MASK_FADE_MS);
   let maskDirty = true;
   // Shade under content still arriving (`arrived`) is painted again on every
@@ -582,11 +595,11 @@ export function mountSaturn(scene: HTMLElement, box: HTMLElement, options: Satur
         shade.uMaskFrom.value.dispose();
         shade.uMaskFrom.value = maskTexture(maskFrom);
       }
-      shadeArriving = paintShade(maskContext, shadeBoxes, width, height, maskMargin);
+      shadeArriving = paintShade(maskContext, shadeBoxes, width, height, maskMargin, shadows);
       shade.uMask.value.needsUpdate = true;
       const previous = fade.from();
       if (previous && maskFromContext) {
-        paintShade(maskFromContext, previous, width, height, maskMargin);
+        paintShade(maskFromContext, previous, width, height, maskMargin, shadows);
         shade.uMaskFrom.value.needsUpdate = true;
       }
       shade.uViewport.value.set(width, height);

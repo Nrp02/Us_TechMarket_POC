@@ -203,28 +203,16 @@
    lit limb and a faint lane of dust in the ring plane, reaching past the
    rings. One element under the render, inside the box that carries the
    planet, so it goes where the planet goes and turns with its roll. Broken
-   up by a fractal mask so it reads as dust rather than as a vignette. It
-   does not animate, and it is rasterised once. */
+   up by fractal noise so it reads as dust rather than as a vignette. It
+   does not animate. Baked into one image from --saturn-ring and
+   --saturn-glow by `scripts/bake-saturn-dust.mts`: as a mask, Safari
+   rasterised it again on every route change and dropped a 130-230ms frame. */
 .saturn-view::before {
   content: "";
   position: absolute;
   inset: -35%;
   transform: rotate(calc(var(--saturn-roll) * -1deg));
-  background:
-    radial-gradient(
-      ellipse 47% 7.5% at 50% 50%,
-      color-mix(in srgb, var(--saturn-ring) 22%, transparent),
-      color-mix(in srgb, var(--saturn-ring) 9%, transparent) 55%,
-      transparent 100%
-    ),
-    radial-gradient(
-      ellipse 24% 24% at 45% 46%,
-      color-mix(in srgb, var(--saturn-glow) 14%, transparent),
-      color-mix(in srgb, var(--saturn-glow) 5%, transparent) 60%,
-      transparent 100%
-    );
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='700'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.012' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 2.4 0 0 0 -0.55'/%3E%3C/filter%3E%3Crect width='700' height='700' filter='url(%23n)'/%3E%3C/svg%3E");
-  mask-size: 700px 700px;
+  background: url("./saturn-dust.webp") 0 0 / 100% 100% no-repeat;
 }
 
 .saturn-drift {

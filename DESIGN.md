@@ -532,7 +532,7 @@ Arrival is **card by card, in reading order**, one beat (`--enter-step`, 110ms) 
 
 Instruments draw once their own card has settled (`--enter-instruments`, 280ms after the card): sparklines and the intraday line left to right, volume bars, the breadth bar toward its split, the story charts. A phone gets shorter, closer, quicker values for all of it.
 
-A route change shows the skeleton immediately, and the page takes the skeleton's place mid-entrance rather than starting again (`page-entrance.tsx`). **A change within a page** (another date, stock, tab or filter) is not an arrival: the content steps back to 40% after 120ms while waiting, then comes up from 40% in 220ms, with no card waiting its turn and no chart redrawing.
+A route change shows the skeleton immediately, and the page takes the skeleton's place mid-entrance rather than starting again (`page-entrance.tsx`). **A change within a page** (another stock, tab or filter) is not an arrival: the content steps back to 40% after 120ms while waiting, then comes up from 40% in 220ms, with no card waiting its turn and no chart redrawing. **Another date is an arrival**: the content steps back the same way while waiting, then the whole entrance plays, cards and charts included.
 
 Interaction motion is short and physical: `lift` over 220ms on `cubic-bezier(0.16, 1, 0.3, 1)`, `press` over 150ms, colour transitions at 150ms. An overlay settles out of the button that opened it in 200ms.
 

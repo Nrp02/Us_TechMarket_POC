@@ -12,7 +12,8 @@
     "setup-cron": "node --experimental-strip-types --env-file=.env.local scripts/setup-cron.mts",
     "backfill-daily-closes": "node --experimental-strip-types --env-file=.env.local scripts/backfill-daily-closes.mts",
     "backfill-fundamentals": "node --experimental-strip-types --env-file=.env.local scripts/backfill-fundamentals.mts",
-    "check:motion": "node --experimental-strip-types scripts/check-route-motion.mts"
+    "check:motion": "node --experimental-strip-types scripts/check-route-motion.mts",
+    "check:safari-motion": "node --experimental-strip-types scripts/check-safari-motion.mts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

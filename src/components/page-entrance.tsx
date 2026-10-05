@@ -26,13 +26,14 @@ import { hydrated } from "@/components/page-measure";
 // of light) is moved; a chart drawing inside them skips the wait it has
 // already sat through, and keeps its full length.
 //
-// A change WITHIN a page — another date, another stock, another tab or
-// filter — is not an arrival at all. The block is marked
-// `data-arrival="update"` before it is painted, and globals.css ("Changing
-// what the page shows") swaps the whole choreography for one short fade. A
-// change is a navigation that stays in the same section of the product: the
-// first segment of the path, so /todays-activity/NVDA to /todays-activity/AMD
-// is a change, and the nav to another route is an arrival.
+// A change WITHIN a page — another stock, another tab or filter — is not an
+// arrival at all. The block is marked `data-arrival="update"` before it is
+// painted, and globals.css ("Changing what the page shows") swaps the whole
+// choreography for one short fade. A change is a navigation that stays in the
+// same section of the product (the first segment of the path, so
+// /todays-activity/NVDA to /todays-activity/AMD is a change) on the same day.
+// Another day is another session's page, and arrives like the nav to another
+// route does (owner, 2026-10-05: the short fade read as no answer at all).
 
 // globals.css, "The page arriving" and "Changing what the page shows".
 const ENTRANCES = new Set(["enter-rise", "enter-fade", "enter-catch", "enter-refresh"]);
@@ -44,6 +45,10 @@ const LINE = new Set(["line-rise", "word-in", "figure-count", "figure-hold", "pl
 const SKELETON = "[aria-busy]";
 
 const sectionOf = (path: string) => path.split("/")[1] ?? "";
+// The page's place: its section and the day it shows (`?date=`, absent for the
+// default day).
+const placeOf = (url: { pathname: string; search: string }) =>
+  `${sectionOf(url.pathname)} ${new URLSearchParams(url.search).get("date") ?? ""}`;
 
 export function PageEntrance() {
   useEffect(() => {
@@ -52,8 +57,8 @@ export function PageEntrance() {
     // The skeleton on screen, when it began its entrance, and whether that
     // was an arrival or a change.
     let skeleton: { el: Element; at: number; update: boolean } | null = null;
-    // The section the last arrival was in; the first load's is the page's.
-    let shown = sectionOf(location.pathname);
+    // The place the last arrival was in; the first load's is the page's.
+    let shown = placeOf(location);
 
     // A change asked for and not yet here. A new date, tab or filter has no
     // skeleton — the page it replaces stays until the new one is rendered,
@@ -101,7 +106,7 @@ export function PageEntrance() {
           // It arrives on its own clock. (A block a navigation renders has
           // its fiber from the moment it is created.)
           if (!hydrated(block)) {
-            shown = sectionOf(location.pathname);
+            shown = placeOf(location);
             skeleton = null;
             continue;
           }
@@ -109,10 +114,10 @@ export function PageEntrance() {
           const replacing = skeleton;
           // A page replacing its skeleton is the same navigation, and takes
           // the skeleton's verdict.
-          const section = sectionOf(location.pathname);
-          const update = replacing && !isSkeleton ? replacing.update : section === shown;
+          const place = placeOf(location);
+          const update = replacing && !isSkeleton ? replacing.update : place === shown;
           if (update) (block as HTMLElement).dataset.arrival = "update";
-          shown = section;
+          shown = place;
           skeleton = isSkeleton ? { el: block, at: now, update } : null;
           if (!replacing) continue;
           const elapsed = now - replacing.at;
