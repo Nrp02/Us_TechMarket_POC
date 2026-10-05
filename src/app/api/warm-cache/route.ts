@@ -14,8 +14,8 @@ import { TOP_20_SYMBOLS } from "@/lib/symbols";
 // it reads only Supabase, never an upstream API or an AI model.
 export const maxDuration = 60;
 
-// Enough to finish ~180 pages well inside maxDuration without a burst the
-// database would notice.
+// Measured against production at 12: all 155 pages, ~55s. Higher was not
+// tried on the live server; locally it timed out the reads.
 const CONCURRENCY = 12;
 
 export async function POST(request: Request) {
@@ -31,14 +31,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // `?part=` runs one slice, so a caller can split the work across requests
+  // that each fit inside maxDuration: 0 = Market and News, 1 and 2 = the Top 20
+  // stocks, first and second half. Without it, everything runs in one request.
+  const part = new URL(request.url).searchParams.get("part");
   const origin = new URL(request.url).origin;
   const [{ availableDates }, newsDates] = await Promise.all([getMarketSession(), getNewsDates()]);
   const dated = (path: string, dates: string[]) => [path, ...dates.map((d) => `${path}?date=${d}`)];
-  const paths = [
-    ...dated("/", availableDates),
-    ...TOP_20_SYMBOLS.flatMap((symbol) => dated(`/todays-activity/${symbol}`, availableDates)),
-    ...dated("/news", newsDates),
-  ];
+  const half = Math.ceil(TOP_20_SYMBOLS.length / 2);
+  const stocks = (from: number, to: number) => TOP_20_SYMBOLS.slice(from, to)
+    .flatMap((symbol) => dated(`/todays-activity/${symbol}`, availableDates));
+  const slices: Record<string, string[]> = {
+    "0": [...dated("/", availableDates), ...dated("/news", newsDates)],
+    "1": stocks(0, half),
+    "2": stocks(half, TOP_20_SYMBOLS.length),
+  };
+  const paths = part == null ? Object.values(slices).flat()
+    : slices[part] ?? null;
+  if (!paths) return NextResponse.json({ error: "part must be 0, 1 or 2" }, { status: 400 });
 
   const started = Date.now();
   const failed: string[] = [];

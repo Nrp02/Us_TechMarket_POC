@@ -5,16 +5,20 @@
 # src/app/api/warm-cache/route.ts.
 name: Warm cache
 
-on: deployment_status
+on:
+  deployment_status:
+  workflow_dispatch:
 
 jobs:
   warm:
-    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'
+    if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
     runs-on: ubuntu-latest
     steps:
-      - name: Open every dated page
+      - name: Open every dated page, one slice per request
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          URL: ${{ github.event.deployment_status.environment_url }}
+          URL: ${{ github.event.deployment_status.environment_url || 'https://ustechmarket.vercel.app' }}
         run: |
-          curl --fail-with-body -sS -m 90 -X POST -H "Authorization: Bearer $CRON_SECRET" "$URL/api/warm-cache"
+          for part in 0 1 2; do
+            curl --fail-with-body -sS -m 90 -X POST -H "Authorization: Bearer $CRON_SECRET" "$URL/api/warm-cache?part=$part"
+          done
