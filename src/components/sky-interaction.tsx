@@ -443,10 +443,11 @@ export function SkyInteraction() {
       if (any) run();
     };
 
-    // A tap, on a screen with no pointer to rest. A fine pointer draws by
-    // resting (onMove), so its click on the sky does nothing.
+    // A tap. A fine pointer draws by resting (onMove), so its click on the
+    // sky does nothing; a touch screen on a laptop with one still taps.
     const onClick = (e: MouseEvent) => {
-      if (reducedMq.matches || fineMq.matches || e.button !== 0) return;
+      if (reducedMq.matches || e.button !== 0) return;
+      if (fineMq.matches && (e as PointerEvent).pointerType !== "touch") return;
       if (performance.now() < quietUntil) return;
       const target = e.target as Element | null;
       if (target?.closest(NOT_SKY)) return;

@@ -227,7 +227,10 @@ function paintShade(
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.globalCompositeOperation = "lighter";
   const paint = (list: Bounds[], rgb: string, { reach, feather }: { reach: number; feather: number }) => {
-    const pad = reach + feather;
+    // Room for the blur's tail: three deviations past the grown edge, where
+    // it is under one step of 8-bit alpha. At `reach + feather`, two
+    // deviations, a sprite cut it off as a hard step of about 0.02.
+    const pad = reach + feather * 1.25;
     for (const b of list) {
       const top = b.top - dy;
       const bottom = b.bottom - dy;
