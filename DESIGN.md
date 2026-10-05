@@ -530,6 +530,8 @@ Arrival is **card by card, in reading order**, one beat (`--enter-step`, 110ms) 
 2. **The first cards** (`data-enter` 1–3) after `--enter-lead` (340ms), rising 18px from clear over 560ms on an even deceleration, each catching light on its rim once as it settles.
 3. **Everything else** fades in together on beat 4 without travelling.
 
+What arrives below the fold is already at rest, instruments drawn: an entrance nobody sees still cost Safari a dropped frame as it started and another as it ended (`settleBelowFold` in `page-entrance.tsx`).
+
 Instruments draw once their own card has settled (`--enter-instruments`, 280ms after the card): sparklines and the intraday line left to right, volume bars, the breadth bar toward its split, the story charts. A phone gets shorter, closer, quicker values for all of it.
 
 A route change shows the skeleton immediately, and the page takes the skeleton's place mid-entrance rather than starting again (`page-entrance.tsx`). **A change within a page** (another stock, tab or filter) is not an arrival: the content steps back to 40% after 120ms while waiting, then comes up from 40% in 220ms, with no card waiting its turn and no chart redrawing. **Another date is an arrival**: the content steps back the same way while waiting, then the whole entrance plays, cards and charts included.
@@ -587,7 +589,7 @@ Interaction motion is short and physical: `lift` over 220ms on `cubic-bezier(0.1
 - **Don't** repaint the planet's shade mask on every scroll frame. A scroll moves the painted mask; it is repainted only after half a screen.
 - **Don't** show a planet on a phone.
 - **Don't** start every animation at t=0. The page's line arrives, then the cards one beat apart, then the instruments in each card.
-- **Don't** replay the arrival for a change within a page (a date, a stock, a tab, a filter). It is one short fade.
+- **Don't** replay the arrival for a change within a page (a stock, a tab, a filter). It is one short fade. A new date is an arrival.
 - **Don't** declare an ARIA role you have not built the keyboard model for.
 - **Don't** set a keyboard hint as bare quiet text beside a label. Draw a keycap or leave it out.
 - **Don't** let Signal Blue become decorative. Outside a token of state, an accent dot, tick or rule is a violation.

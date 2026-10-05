@@ -50,6 +50,30 @@ const sectionOf = (path: string) => path.split("/")[1] ?? "";
 const placeOf = (url: { pathname: string; search: string }) =>
   `${sectionOf(url.pathname)} ${new URLSearchParams(url.search).get("date") ?? ""}`;
 
+// What arrives below the fold is already there. Its entrance would play
+// unseen, and in Safari it cost the most of anything on a route change: the
+// sections under a Stocks page (about 3700px of them) all started their fade
+// on one beat and ended it on another, and each end dropped a frame of
+// 40-60ms as their layers were made and taken down again (measured
+// 2026-10-05). A visitor who scrolls down finds them at rest, as on any
+// later scroll.
+function settleBelowFold(block: Element) {
+  const fold = window.innerHeight;
+  const below = new Map<Element, boolean>();
+  for (const animation of block.getAnimations({ subtree: true })) {
+    const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+    if (!target || !Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Infinity)) continue;
+    // Judged by the top-level block it is in, so a card is not cut off from
+    // the rest of its section.
+    let part: Element | null = target;
+    while (part && part.parentElement !== block) part = part.parentElement;
+    if (!part) continue;
+    let isBelow = below.get(part);
+    if (isBelow === undefined) below.set(part, (isBelow = part.getBoundingClientRect().top >= fold));
+    if (isBelow) animation.finish();
+  }
+}
+
 export function PageEntrance() {
   useEffect(() => {
     const main = document.querySelector("main");
@@ -119,21 +143,24 @@ export function PageEntrance() {
           if (update) (block as HTMLElement).dataset.arrival = "update";
           shown = place;
           skeleton = isSkeleton ? { el: block, at: now, update } : null;
-          if (!replacing) continue;
-          const elapsed = now - replacing.at;
-          for (const animation of block.getAnimations({ subtree: true })) {
-            if (!(animation instanceof CSSAnimation)) continue;
-            if (ENTRANCES.has(animation.animationName)) {
-              animation.currentTime = elapsed;
-              continue;
+          if (replacing) {
+            const elapsed = now - replacing.at;
+            for (const animation of block.getAnimations({ subtree: true })) {
+              if (!(animation instanceof CSSAnimation)) continue;
+              if (ENTRANCES.has(animation.animationName)) {
+                animation.currentTime = elapsed;
+                continue;
+              }
+              if (LINE.has(animation.animationName)) continue;
+              // An instrument waits for its card to land before it draws (a
+              // chart's line, a breadth bar); skip the part of that wait that
+              // has passed, and play the drawing in full.
+              const delay = Number(animation.effect?.getTiming().delay ?? 0);
+              animation.currentTime = Math.min(elapsed, delay);
             }
-            if (LINE.has(animation.animationName)) continue;
-            // An instrument waits for its card to land before it draws (a
-            // chart's line, a breadth bar); skip the part of that wait that
-            // has passed, and play the drawing in full.
-            const delay = Number(animation.effect?.getTiming().delay ?? 0);
-            animation.currentTime = Math.min(elapsed, delay);
           }
+          // After the hand-over, which would otherwise start them again.
+          if (!update) settleBelowFold(block);
         }
       }
       // A skeleton replaced by something else (an error) has nothing to hand on.

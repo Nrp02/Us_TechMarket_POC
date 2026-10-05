@@ -12,9 +12,13 @@ const HIDE_MAIN = process.env.HIDE_MAIN === "1";
 const HIDE_SKY = process.env.HIDE_SKY === "1";
 const HIDE_NIGHT = process.env.HIDE_NIGHT === "1";
 const HIDE_SATURN = process.env.HIDE_SATURN === "1";
+// Every route to every other, ending where it starts.
 const HOPS = [
   ["Market → Stocks", 'header a[href^="/todays-activity"]'],
   ["Stocks → News", 'header a[href="/news"]'],
+  ["News → Stocks", 'header a[href^="/todays-activity"]'],
+  ["Stocks → Market", 'header a[href="/"]'],
+  ["Market → News", 'header a[href="/news"]'],
   ["News → Market", 'header a[href="/"]'],
 ] as const;
 
