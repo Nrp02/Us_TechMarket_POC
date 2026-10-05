@@ -16,4 +16,5 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           URL: ${{ github.event.deployment_status.environment_url }}
-        run: curl --fail-with-body -sS -m 90 -X POST -H "Authorization: Bearer $CRON_SECRET" "$URL/api/warm-cache"
+        run: |
+          curl --fail-with-body -sS -m 90 -X POST -H "Authorization: Bearer $CRON_SECRET" "$URL/api/warm-cache"
