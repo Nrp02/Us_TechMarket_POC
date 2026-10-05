@@ -30,6 +30,7 @@ Two directions that never meet: **jobs write**, **pages read**. A page importing
 | `daily-summaries` | `5-55/10 22-23 * * 1-5` | `api/daily-summary` | `daily-summary.ts` | `daily_summaries`, `timeline_events` |
 | `today-story` | `0-55/5 20-23 * * 1-5` | `api/story` | `story-generation.ts`, `market-story-generation.ts` | `stories`, `market_stories` |
 | `data-retention-cleanup` | `0 4 * * *` | pure SQL (`0007`/`0008`) | `prune_old_data()` | deletes old rows |
+| `warm-cache` | `40 14 * * 1-5` (in script; provision with `npm run setup-cron -- warm-cache`) | `api/warm-cache` | the route itself; also run after each production deploy by `.github/workflows/warm-cache.yml` | nothing (fills the data cache) |
 
 Market-hours gating lives in `market.ts` (`America/New_York`). Routes check `CRON_SECRET` and return 503 when unset.
 

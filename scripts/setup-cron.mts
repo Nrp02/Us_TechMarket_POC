@@ -69,7 +69,25 @@ const JOBS = [
     schedule: "0-55/5 20-23 * * 1-5",
     path: "/api/story",
   },
+  // Opens every dated page once the new Session's first snapshot is in, so
+  // yesterday's link (now `?date=`) is cached before a visitor asks for it.
+  // 14:40 UTC is after the open under both EST and EDT. Nothing upstream: the
+  // route reads Supabase only. See src/app/api/warm-cache/route.ts.
+  {
+    name: "warm-cache",
+    schedule: "40 14 * * 1-5",
+    path: "/api/warm-cache",
+  },
 ];
+
+// Job names given on the command line provision only those jobs
+// (`npm run setup-cron -- warm-cache`), leaving every other schedule as it is.
+const only = process.argv.slice(2);
+const jobs = only.length ? JOBS.filter((job) => only.includes(job.name)) : JOBS;
+if (only.length && jobs.length !== only.length) {
+  console.error(`unknown job in: ${only.join(", ")}`);
+  process.exit(1);
+}
 
 // A cold news cycle can take ~45s, so pg_net must outwait the function rather
 // than aborting a run that is still working.
@@ -102,7 +120,7 @@ async function putSecret(name: string, value: string) {
 await putSecret("cron_secret", CRON_SECRET);
 await putSecret("app_base_url", APP_BASE_URL);
 
-for (const job of JOBS) {
+for (const job of jobs) {
   // cron.unschedule throws if the job is absent, so check first.
   const { rows } = await client.query(
     "SELECT 1 FROM cron.job WHERE jobname = $1",

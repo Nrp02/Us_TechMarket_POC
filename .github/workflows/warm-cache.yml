@@ -1,0 +1,19 @@
+# Each Vercel deployment starts with an empty data cache, so after a production
+# deploy every dated page would be slow for its first visitor. This opens them
+# all once, against the deployment that just went live. Needs the repository
+# secret CRON_SECRET (the same value as in Vercel). See
+# src/app/api/warm-cache/route.ts.
+name: Warm cache
+
+on: deployment_status
+
+jobs:
+  warm:
+    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open every dated page
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          URL: ${{ github.event.deployment_status.environment_url }}
+        run: curl --fail-with-body -sS -m 90 -X POST -H "Authorization: Bearer $CRON_SECRET" "$URL/api/warm-cache"
