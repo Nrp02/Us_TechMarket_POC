@@ -29,7 +29,7 @@ const JOBS = [
     schedule: "*/15 13-21 * * 1-5",
     path: "/api/refresh",
   },
-  // Twelve proposed cycles/day. Live schedules change only when this script is run.
+  // Twelve cycles/day, live since 2026-09-29. Live schedules change only when this script is run.
   {
     name: "news-ingest",
     // 12 cycles/day, offset from refresh (:00/:15/:30/:45) and EOD (:05/:15/...).

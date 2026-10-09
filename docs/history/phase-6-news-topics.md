@@ -8,7 +8,7 @@
 
 **Decided:**
 
-- **The term is `Topic`** — what an article is about (e.g. Earnings, Product). Never call it "category": `category` already means the company / industry / market split on the News page. See `CONTEXT.md`.
+- **The term is `Topic`** — what an article is about (e.g. Earnings, Product). Never call it "category": `category` already means the Stock / Market tab split on the News page. See `CONTEXT.md`.
 - **Scope of the first build:** one Topic label per article, plus a per-stock breakdown on Today's Activity that counts articles by Topic **in code**. The AI does **not** group articles into "stories" (same event, several outlets) in this build — that needs a stable story identity across cycles and days, and is deferred until labels prove useful.
 - **Zero extra Gemini calls.** Topic is added as a field to the existing news-summary call's schema (`src/lib/news-ingest.ts`), so the budget stays 12/20 per day.
 
