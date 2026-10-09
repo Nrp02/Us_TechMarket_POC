@@ -24,9 +24,9 @@ There is no watchlist and no user account. The site stores nothing per visitor.
 
 ### The AI is forbidden from doing the thing every competitor does
 
-Products in this category compete on explaining **why** a stock moved and **what comes next**. This one is built to do neither. Every piece of generated text describes what happened: it never invents news or numbers, never calculates new figures, never predicts, never advises, and never claims news caused a move unless the source says so.
+Products in this category compete on explaining **why** a stock moved and **what comes next**. This one is built to do neither. Every piece of generated text is instructed to describe what happened: never invent news or numbers, never calculate new figures, never predict, never advise, and never claim news caused a move unless the source says so.
 
-The rule is enforced in the pipeline, not only in the prompt. Figures are computed before the model sees them, and the model states them rather than deriving them. Where the evidence does not explain a move, the output uses a fixed fallback line instead of a guess.
+Part of the rule is enforced in the pipeline, not only in the prompt. Figures are computed before the model sees them, and the model states them rather than deriving them. Where the evidence does not explain a move, the output uses a fixed fallback line instead of a guess.
 
 Today's Story and Market Story are the one place grounded inference is allowed: every claim must point to a figure or label in the structured input. Automated checks on those drafts record problems and display them as "Automated check" notes under the card. A failed check does not reject the draft, so every stock gets a story each day.
 
@@ -139,3 +139,4 @@ Three root documents carry the reasoning, and they divide cleanly:
 - **Nothing on screen is live.** Snapshots land on a schedule and reads are cached for up to 60 seconds.
 - **Only seven days of history exist**, by design. There is no archive and no way to look up a past session.
 - There are **no users, no track record and no financial-services standing**. This is a student project that holds no money and executes no trades. Nothing in it is investment advice.
+- **The stories describe more than they analyse.** A review of one week (2026-10-05 to 10-08, 80 stock stories) found most restate the supplied figures, close on stock phrases ("remains unresolved"), and about one in seven contain forward-looking wording ("could weigh") that the prompt forbids but the automated checks do not catch. The checks catch unsupplied figures and some sign errors, not every one. Group moves were mislabelled as company-specific; that rule now also compares the sector and peers (`38690fe`).
