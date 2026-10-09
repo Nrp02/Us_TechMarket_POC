@@ -153,7 +153,7 @@ test("a flat (zero) baseline day still assembles a valid, non-crashing payload",
   });
   assert.equal(input.significance.significant, false);
   assert.equal(input.divergence.vsSectorDirection, "flat");
-  assert.equal(input.movementClassification, "company-specific"); // |0 - (-2)| = 2
+  assert.equal(input.movementClassification, "sector-wide"); // |0 - (-2)| = 2 from SPY, but level with XLK
 });
 
 test("no results are ever free text — every field is a number or a value from a fixed label set", () => {

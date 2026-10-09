@@ -86,7 +86,7 @@ export function buildStoryPrompt(story: StoryInput): AnalysisPrompt {
       stockMinusSector: pointsOrNull(story.divergence.vsSectorPercent), direction: story.divergence.vsSectorDirection },
     market: { symbol: "SPY", change: percentOrNull(marketChangePercent),
       stockMinusMarket: pointsOrNull(story.divergence.vsMarketPercent), direction: story.divergence.vsMarketDirection },
-    classification: { label: story.movementClassification, rule: "abs(stockMinusMarket) >= 2 percentage points means company-specific; otherwise market-wide. Descriptive gap only, not causal attribution." },
+    classification: { label: story.movementClassification, rule: "abs(stockMinusMarket) < 2 percentage points means market-wide; otherwise sector-wide when abs(stockMinusSector) or abs(stockMinusAverage) < 2, else company-specific. Descriptive gap only, not causal attribution." },
     volatility: { magnitudePercentile: story.volatility.percentile == null ? null : Math.round(story.volatility.percentile),
       rangePositionPercent: story.volatility.rangePosition == null ? null : `${Math.round(story.volatility.rangePosition * 100)}%`,
       rangeLabel: story.volatility.rangeLabel },

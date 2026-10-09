@@ -153,6 +153,7 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
     .map((row) => row.changePercent as number);
   const rangePosition = computeRangePosition(price, dailyCloses.map((row) => row.close));
   const peerChangePercents = peerBreakdown.map((p) => p.changePercent);
+  const peers = computePeerComparison(changePercent, peerChangePercents);
 
   return {
     symbol,
@@ -163,14 +164,14 @@ export function buildStoryInput(params: StoryInputParams): StoryInput {
       significant: isSignificant(changePercent, relativeVolume),
     },
     peers: {
-      ...computePeerComparison(changePercent, peerChangePercents),
+      ...peers,
       symbols: peerSymbols,
       breakdown: peerBreakdown,
     },
     sectorChangePercent,
     marketChangePercent,
     divergence,
-    movementClassification: classifyMovement(divergence.vsMarketPercent),
+    movementClassification: classifyMovement(divergence.vsMarketPercent, divergence.vsSectorPercent, peers.vsPeersPercent),
     volatility: {
       percentile: computeVolatilityPercentile(changePercent, historicalChangePercents),
       rangePosition: rangePosition.position,

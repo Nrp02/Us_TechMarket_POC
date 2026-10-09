@@ -7,8 +7,9 @@ export const ANALYSIS_GUIDELINE = `DEFINITIONS
   left of the stock's move after the backdrop.
 - Ahead/behind: compare signed returns. A peer that fell less than the stock
   did better, not "lagged". Check every peer before writing "all" or "every".
-- Engine label: company-specific when |stock - SPY| >= 2 percentage points,
-  otherwise market-wide. A threshold, not a finding about cause.
+- Engine label: market-wide when |stock - SPY| < 2 percentage points;
+  otherwise sector-wide when |stock - XLK| or |stock - peer mean| < 2;
+  otherwise company-specific. A threshold, not a finding about cause.
 - Range position: distance within the trailing min/max, not a percentile.
 - Recent Trend: backward-looking swing structure. Direction comes from the
   swings, not the sign of the net window change. Swing-point age counts days
